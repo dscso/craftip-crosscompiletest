@@ -3,7 +3,7 @@ mod util;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
-use std::env;
+use std::{env, result};
 use std::error::Error;
 use thiserror::Error;
 
@@ -85,10 +85,24 @@ impl Packet {
         self.length += size;
         self.data.extend_from_slice(data[..size].as_ref());
     }
+    pub fn get_varint(&self, start: usize) -> Result<VarInt, PacketError> {
+        return VarInt::new(&self.data, start).map_err(|_| PacketError::TooSmall);
+    }
+    pub fn get_u16(&self, start: usize) -> Result<u16, PacketError> {
+        if self.data.len() <= start + 1 {
+            return Err(PacketError::TooSmall);
+        }
+        Ok(u16::from_be_bytes([
+            self.data[start],
+            self.data[start + 1],
+        ]))
+    }
     pub fn get_utf16_string(&self, start: usize) -> Result<String, PacketError> {
         //assert!(2*size <= slice.len());
-        let size = (self.get_byte(start).ok_or(PacketError::TooSmall)? as usize) << 8
-            | self.get_byte(start).ok_or(PacketError::TooSmall)? as usize;
+        let size = self.get_u16(start)? as usize;
+        if self.data.len() <= start + 2 + size * 2 {
+            return Err(PacketError::TooSmall);
+        }
         let iter = (0..size).map(|i| {
             u16::from_be_bytes([
                 self.data[(start + 2) + 2 * i],
@@ -96,10 +110,13 @@ impl Packet {
             ])
         });
 
-        std::char::decode_utf16(iter)
-            .collect::<Result<String, _>>()
-            .ok()
-            .ok_or(PacketError::TooSmall)
+        let result = std::char::decode_utf16(iter)
+            .collect::<Result<String, _>>();
+
+        match result {
+            Ok(s) => Ok(s),
+            Err(_) => Err(PacketError::NotValid),
+        }
     }
     pub fn get_byte(&self, index: usize) -> Option<u8> {
         if index >= self.data.len() {
@@ -110,6 +127,10 @@ impl Packet {
     pub fn flush_packet(&mut self, size: usize) {
         self.length -= size;
         self.data = self.data[size..].to_vec();
+    }
+    pub fn flush_total(&mut self) {
+        self.length = 0;
+        self.data = Vec::new();
     }
 }
 
@@ -219,22 +240,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     if packet.get_byte(0) == Some(0xFE) && packet.get_byte(1) == Some(0x01) {
                         println!("old minecaft protocol");
                         // ping packet
+                        if packet.length < OLD_MINECRAFT_START.len() {
+                            continue;
+                        }
                         if packet.data[0..OLD_MINECRAFT_START.len()].eq(&OLD_MINECRAFT_START) {
-                            println!("PING");
-                            let mut reader = OLD_MINECRAFT_START.len() + 3;
-                            let hostname_length: usize = (packet.data[reader] as usize) << 8
-                                | packet.data[reader + 1] as usize;
-                            reader += 2;
-                            println!("HOSTNAME LENGTH: {}", hostname_length);
-                            let hostname = util::read_string(
-                                &packet.data[reader..reader + hostname_length * 2],
-                                hostname_length,
-                            );
-                            reader += hostname_length * 2;
-                            println!("HOSTNAME: {}", hostname.unwrap());
+                            if let Ok(hostname) = packet.get_utf16_string(30) {
+                                println!("HOSTNAME {}", hostname);
+                            } else {
+                                continue;
+                            }
+
+                            packet.flush_total();
                             first_packet = true;
 
-                            return;
                         }
                         continue;
                     } else if packet.get_byte(0) == Some(0x02) && packet.get_byte(1) == Some(0x49) {
@@ -248,8 +266,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         let hostname = packet.get_utf16_string(username.len() * 2 + 4).unwrap();
                         println!("hostname: {}", hostname);
 
+                        packet.flush_total();
                         first_packet = true;
-                        return;
+                        continue;
                     }
                 }
                 let hello = HelloPacket::new(packet.data.to_vec(), packet.length);
