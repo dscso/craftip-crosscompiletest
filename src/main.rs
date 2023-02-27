@@ -1,12 +1,13 @@
-mod util;
+mod test;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt};
 use tokio::net::TcpListener;
 
-use std::{env, result};
+use std::{env};
 use std::error::Error;
 use thiserror::Error;
 
+#[derive(Debug, PartialEq, Eq)]
 struct VarInt {
     value: i32,
     size: usize,
@@ -52,22 +53,25 @@ impl VarInt {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq, Eq)]
 pub enum PacketError {
     #[error("Packet is too small, missing Bytes")]
     TooSmall,
     #[error("Packet is not valid")]
     NotValid,
+    #[error("UTF-16 String is not valid")]
+    NotValidUTF16,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 struct HelloPacket {
     length: usize,
     id: i32,
     version: i32,
     hostname: String,
+    port: u32,
 }
-
+#[derive(Debug, Clone)]
 struct Packet {
     length: usize,
     data: Vec<u8>,
@@ -88,18 +92,29 @@ impl Packet {
     pub fn get_varint(&self, start: usize) -> Result<VarInt, PacketError> {
         return VarInt::new(&self.data, start).map_err(|_| PacketError::TooSmall);
     }
-    pub fn get_u16(&self, start: usize) -> Result<u16, PacketError> {
+    pub fn get_u16(&self, start: usize) -> Option<u16> {
         if self.data.len() <= start + 1 {
-            return Err(PacketError::TooSmall);
+            return None;
         }
-        Ok(u16::from_be_bytes([
+        Some(u16::from_be_bytes([
             self.data[start],
             self.data[start + 1],
         ]))
     }
+    pub fn get_u32(&self, start: usize) -> Option<u32> {
+        if self.data.len() <= start + 3 {
+            return None;
+        }
+        Some(u32::from_be_bytes([
+            self.data[start],
+            self.data[start + 1],
+            self.data[start + 2],
+            self.data[start + 3],
+        ]))
+    }
     pub fn get_utf16_string(&self, start: usize) -> Result<String, PacketError> {
         //assert!(2*size <= slice.len());
-        let size = self.get_u16(start)? as usize;
+        let size = self.get_u16(start).ok_or(PacketError::TooSmall)? as usize;
         if self.data.len() <= start + 2 + size * 2 {
             return Err(PacketError::TooSmall);
         }
@@ -135,18 +150,58 @@ impl Packet {
 }
 
 impl HelloPacket {
-    pub fn new(buf: Vec<u8>, size: usize) -> Result<HelloPacket, PacketError> {
+    pub fn new(packet: Packet) -> Result<HelloPacket, PacketError> {
         let mut reader: usize = 0;
+        if packet.get_byte(0) == Some(0xFE) && packet.get_byte(1) == Some(0x01) {
+            // ping packet
+            if packet.length < OLD_MINECRAFT_START.len() {
+                return Err(PacketError::TooSmall);
+            }
+            if packet.data[0..OLD_MINECRAFT_START.len()].eq(&OLD_MINECRAFT_START) {
+                let version = packet.get_byte(29).ok_or(PacketError::TooSmall)?;
+                let rest_data = packet.get_u16(27).ok_or(PacketError::TooSmall)? as usize;
+                let hostname = packet.get_utf16_string(30)?;
 
-        let Ok(pkg_length) = VarInt::new(&buf, reader) else {
+                if 7 + hostname.len() * 2 != rest_data {
+                    return Err(PacketError::NotValid);
+                }
+                let port = packet.get_u32(30 + 2 + hostname.len() * 2).ok_or(PacketError::TooSmall)?;
+
+                return Ok(HelloPacket {
+                    length: 30 + 2 /* hostnamesize */ + hostname.len() * 2 /* utf16 */ + 4 /* port */,
+                    id: 0,
+                    version: version as i32,
+                    port,
+                    hostname,
+                });
+
+            }
+        } else if packet.get_byte(0) == Some(0x02) && packet.get_byte(1) == Some(0x49) {
+            // connect request old protocol
+            let mut reader = 2;
+            let username = packet.get_utf16_string(reader)?;
+            reader += 2 + username.len() * 2;
+            let hostname = packet.get_utf16_string(reader)?;
+            reader += 2 + hostname.len() * 2;
+            let port = packet.get_u32(reader).ok_or(PacketError::TooSmall)?;
+            reader += 4;
+            return Ok(HelloPacket {
+                length: reader,
+                id: 0,
+                version: 0,
+                port,
+                hostname,
+            });
+        }
+        let Ok(pkg_length) = packet.get_varint(reader) else {
             return Err(PacketError::TooSmall);
         };
         reader += pkg_length.size;
-        let Ok(id) = VarInt::new(&buf, reader) else {
+        let Ok(id) = packet.get_varint(reader) else {
             return Err(PacketError::TooSmall);
         };
         reader += id.size;
-        let Ok(version) = VarInt::new(&buf, reader) else {
+        let Ok(version) = packet.get_varint(reader) else {
             return Err(PacketError::TooSmall);
         };
         // if not handshake packet return
@@ -154,20 +209,21 @@ impl HelloPacket {
             return Err(PacketError::NotValid);
         }
         reader += version.size;
-        let Ok(hostname_len) = VarInt::new(&buf, reader) else {
+        let Ok(hostname_len) = packet.get_varint(reader) else {
             return Err(PacketError::TooSmall);
         };
         reader += hostname_len.size;
         let hostname =
-            String::from_utf8(buf[reader..reader + hostname_len.value as usize].to_vec())
+            String::from_utf8(packet.data[reader..reader + hostname_len.value as usize].to_vec())
                 .unwrap_or_else(|_| "INVALID HOSTNAME!".to_string());
         // if packet not completely received yet
-        if size < reader {
+        if packet.length < reader {
             return Err(PacketError::TooSmall);
         }
         Ok(HelloPacket {
             length: pkg_length.value as usize,
             id: id.value,
+            port: 123,
             version: version.value,
             hostname,
         })
@@ -232,98 +288,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 packet.add_data(&buf, n); // adding frame to packet buffer
 
                 println!(
-                    "{:?}",
-                    String::from_utf8_lossy(&packet.data[..packet.length])
+                    "len: {} {:?}", packet.length,
+                    &packet.data[..packet.length]
                 );
 
                 if !first_packet {
-                    if packet.get_byte(0) == Some(0xFE) && packet.get_byte(1) == Some(0x01) {
-                        println!("old minecaft protocol");
-                        // ping packet
-                        if packet.length < OLD_MINECRAFT_START.len() {
-                            continue;
-                        }
-                        if packet.data[0..OLD_MINECRAFT_START.len()].eq(&OLD_MINECRAFT_START) {
-                            if let Ok(hostname) = packet.get_utf16_string(30) {
-                                println!("HOSTNAME {}", hostname);
-                            } else {
-                                continue;
+                        let hello_packet = HelloPacket::new(packet.clone());
+                        match hello_packet {
+                            Ok(hello_packet) => {
+                                println!("hello packet: {:?}", hello_packet);
+                                packet.flush_packet(hello_packet.length);
+                                first_packet = true;
                             }
-
-                            packet.flush_total();
-                            first_packet = true;
-
+                            Err(e) => {
+                                if e == PacketError::TooSmall {
+                                    continue;
+                                }
+                                println!("error: {:?}", e);
+                            }
                         }
-                        continue;
-                    } else if packet.get_byte(0) == Some(0x02) && packet.get_byte(1) == Some(0x49) {
-                        let username_length = packet.get_byte(3); //.ok_or(PacketError::TooSmall)?;
-                        if username_length == None {
-                            continue;
-                        }
-
-                        let username = packet.get_utf16_string(2).unwrap();
-                        println!("USERNAME: {}", username);
-                        let hostname = packet.get_utf16_string(username.len() * 2 + 4).unwrap();
-                        println!("hostname: {}", hostname);
-
-                        packet.flush_total();
-                        first_packet = true;
-                        continue;
-                    }
                 }
-                let hello = HelloPacket::new(packet.data.to_vec(), packet.length);
-                if hello.is_ok() {
-                    println!("{:?}", hello);
-                    //packet = packet[hello.unwrap().length..packet_length].to_vec();
                 }
-
-                println!("{:?}", &buf[0..n]);
-                println!("{:?}", String::from_utf8_lossy(&buf[0..n]));
-                /*
-                //convert buffer to string
-                println!(
-                    "{} bytes received, {:?}",
-                    n,
-                    String::from_utf8_lossy(&buf[0..n])
-                );
-                if !first_packet {
-                    //let packet = Packet::new(&buf);
-                    let mut buffer_pos: usize = 0;
-                    let length = VarInt::new(&buf).unwrap();
-                    buffer_pos += length.size;
-                    println!("length: {} bytes with value {} ", length.size, length.value);
-                    let packet = VarInt::new(&buf[buffer_pos..]).unwrap();
-                    buffer_pos += packet.size;
-                    println!("packet: {} bytes with value {} ", packet.size, packet.value);
-                    if packet.value == 0 {
-                        println!("Handshake-packet received!");
-                        let version = VarInt::new(&buf[buffer_pos..]).unwrap();
-                        buffer_pos += version.size;
-                        let hostname_size = VarInt::new(&buf[buffer_pos..]).unwrap();
-                        buffer_pos += hostname_size.size;
-                        let hostname = String::from_utf8(
-                            buf[buffer_pos..buffer_pos + hostname_size.value as usize].to_vec(),
-                        )
-                        .unwrap();
-                        println!(
-                            "packet: version: {},  {} bytes with value {} HOSTNAME: {} ",
-                            version.value, hostname_size.size, hostname_size.value, hostname
-                        );
-                    }
-                    first_packet = true;
-                } else {
-                    println!("got new packet: {:?}", &buf[0..n]);
-                }
-                /*println!("packet: len {} of version {} with content {:?}",n , version.value,  &buf[0..length.value as usize]);
-                println!("packet: len {} {:?}",n , &buf[0..n]);*/
-
-                /*socket
-                .write_all(&buf[0..n])
-                .await
-                .expect("failed to write data to socket");*/
-
-                 */
-            }
         });
     }
 }
