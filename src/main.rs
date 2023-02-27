@@ -1,9 +1,9 @@
 mod test;
 
-use tokio::io::{AsyncReadExt};
+use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 
-use std::{env};
+use std::env;
 use std::error::Error;
 use thiserror::Error;
 
@@ -96,10 +96,7 @@ impl Packet {
         if self.data.len() <= start + 1 {
             return None;
         }
-        Some(u16::from_be_bytes([
-            self.data[start],
-            self.data[start + 1],
-        ]))
+        Some(u16::from_be_bytes([self.data[start], self.data[start + 1]]))
     }
     pub fn get_u32(&self, start: usize) -> Option<u32> {
         if self.data.len() <= start + 3 {
@@ -125,8 +122,7 @@ impl Packet {
             ])
         });
 
-        let result = std::char::decode_utf16(iter)
-            .collect::<Result<String, _>>();
+        let result = std::char::decode_utf16(iter).collect::<Result<String, _>>();
 
         match result {
             Ok(s) => Ok(s),
@@ -165,16 +161,17 @@ impl HelloPacket {
                 if 7 + hostname.len() * 2 != rest_data {
                     return Err(PacketError::NotValid);
                 }
-                let port = packet.get_u32(30 + 2 + hostname.len() * 2).ok_or(PacketError::TooSmall)?;
+                let port = packet
+                    .get_u32(30 + 2 + hostname.len() * 2)
+                    .ok_or(PacketError::TooSmall)?;
 
                 return Ok(HelloPacket {
-                    length: 30 + 2 /* hostnamesize */ + hostname.len() * 2 /* utf16 */ + 4 /* port */,
+                    length: 30 + 2 /* hostnamesize */ + hostname.len() * 2 /* utf16 */ + 4, /* port */
                     id: 0,
                     version: version as i32,
                     port,
                     hostname,
                 });
-
             }
         } else if packet.get_byte(0) == Some(0x02) && packet.get_byte(1) == Some(0x49) {
             // connect request old protocol
@@ -228,21 +225,6 @@ impl HelloPacket {
             hostname,
         })
     }
-
-    /*pub fn add_data(&mut self, data: &[u8]) {
-        if self.length.is_none() {
-            let length = VarInt::new(data);
-            self.length = Some(length.value);
-        } else if self.id.is_none() {
-            let id = VarInt::new(data);
-            self.id = Some(id.value);
-        } else {
-            self.data = Some(data.to_vec());
-        }
-        let length = VarInt::new(&buf);
-        let id = VarInt::new(&buf[length.size..]);
-        let data = buf[length.size + id.size..].to_vec();
-    }*/
 }
 
 #[tokio::main]
@@ -287,28 +269,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 packet.add_data(&buf, n); // adding frame to packet buffer
 
-                println!(
-                    "len: {} {:?}", packet.length,
-                    &packet.data[..packet.length]
-                );
+                println!("len: {} {:?}", packet.length, &packet.data[..packet.length]);
 
                 if !first_packet {
-                        let hello_packet = HelloPacket::new(packet.clone());
-                        match hello_packet {
-                            Ok(hello_packet) => {
-                                println!("hello packet: {:?}", hello_packet);
-                                packet.flush_packet(hello_packet.length);
-                                first_packet = true;
-                            }
-                            Err(e) => {
-                                if e == PacketError::TooSmall {
-                                    continue;
-                                }
-                                println!("error: {:?}", e);
-                            }
+                    let hello_packet = HelloPacket::new(packet.clone());
+                    match hello_packet {
+                        Ok(hello_packet) => {
+                            println!("hello packet: {:?}", hello_packet);
+                            packet.flush_packet(hello_packet.length);
+                            first_packet = true;
                         }
+                        Err(e) => {
+                            if e == PacketError::TooSmall {
+                                continue;
+                            }
+                            println!("error: {:?}", e);
+                        }
+                    }
                 }
-                }
+            }
         });
     }
 }
