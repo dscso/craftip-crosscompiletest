@@ -1,6 +1,5 @@
 // unit tests for the library
-
-use crate::{HelloPacket, VarInt};
+use crate::datatypes::{HelloPacket, VarInt, Packet};
 
 struct TestHelloPacket {
     name: String,
@@ -109,6 +108,19 @@ mod tests {
                     port: 25565,
                 },
             },
+            TestHelloPacket {
+                name: "connect with new server".to_string(),
+                buffer: vec![
+                    16, 0, 249, 5, 9, 108, 111, 99, 97, 108, 104, 111, 115, 116, 99, 221, 1,
+                ],
+                packet: HelloPacket {
+                    length: 17,
+                    id: 0,
+                    version: 249,
+                    hostname: "localhost".parse().unwrap(),
+                    port: 25565,
+                },
+            },
         ];
         test_vector.iter().for_each(|test| {
             println!("Testing {}...", test.name);
@@ -145,7 +157,7 @@ mod tests {
                     size: 2,
                 },
             },
-            /*TestVarInt {
+            TestVarInt {
                 buffer: vec![ 0xff, 0xff, 0xff, 0xff, 0x07 ],
                 value: VarInt { value:  2147483647 , size: 5 },
             },
@@ -156,7 +168,7 @@ mod tests {
             TestVarInt {
                 buffer: vec![ 0x80, 0x80, 0x80, 0x80, 0x08 ],
                 value: VarInt { value:   -2147483648  , size: 5 },
-            },*/
+            },
         ];
         test_vector.iter().for_each(|test| {
             println!("Testing {:?}...", test.value.value);
