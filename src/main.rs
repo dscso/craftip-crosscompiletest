@@ -1,5 +1,5 @@
-mod test;
 mod datatypes;
+mod test;
 
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
@@ -8,8 +8,7 @@ use std::env;
 use std::error::Error;
 use thiserror::Error;
 
-use crate::datatypes::{*};
-
+use crate::datatypes::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -17,15 +16,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .nth(1)
         .unwrap_or_else(|| "127.0.0.1:25565".to_string());
 
+
     // Next up we create a TCP listener which will listen for incoming
     // connections. This TCP listener is bound to the address we determined
     // above and must be associated with an event loop.
-    let listener = TcpListener::bind(&addr).await?;
+    let mc_listener = TcpListener::bind(&addr).await?;
     println!("Listening on: {}", addr);
 
     loop {
         // Asynchronously wait for an inbound socket.
-        let (mut socket, _) = listener.accept().await?;
+        let (mut socket, _) = mc_listener.accept().await?;
 
         // And this is where much of the magic of this server happens. We
         // crucially want all clients to make progress concurrently, rather than
@@ -53,7 +53,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 packet.add_data(&buf, n); // adding frame to packet buffer
 
-                println!("len: {} {:?}", packet.length, &packet.data[..packet.length]);
+                //println!("len: {} {:?}", packet.length, &packet.data[..packet.length]);
 
                 if !first_packet {
                     let hello_packet = HelloPacket::new(packet.clone());

@@ -1,4 +1,3 @@
-use std::error::Error;
 use thiserror::Error;
 
 const OLD_MINECRAFT_START: [u8; 27] = [
@@ -16,8 +15,6 @@ pub enum VarIntError {
     NotValid,
 }
 
-
-
 #[derive(Debug, PartialEq, Eq)]
 pub struct VarInt {
     pub value: i32,
@@ -31,18 +28,22 @@ impl VarInt {
 
         let mut size: usize = 0;
 
-        for i in 0..4 {
-            if i + start >= buf.len() {
+        loop {
+            if size >= 5 {
+                return Err(VarIntError::TooBig);
+            }
+            if size + start >= buf.len() {
                 return Err(VarIntError::NotValid);
             }
-            size += 1;
-            let current_byte = buf[i + start];
-            value |= ((current_byte & 0x7F) << position) as i32;
+            let current_byte = buf[size + start];
 
+            value |= ((current_byte & 0x7F) as i32) << position;
+
+            position += 7;
+            size += 1;
             if (current_byte & 0x80) == 0 {
                 break;
             }
-            position += 7;
         }
 
         Ok(VarInt { value, size })
@@ -167,6 +168,9 @@ impl Packet {
 impl HelloPacket {
     pub fn new(packet: Packet) -> Result<HelloPacket, PacketError> {
         let mut reader: usize = 0;
+        /*
+                            OLD PROTOCOL
+         */
         if packet.get_byte(0) == Some(0xFE) && packet.get_byte(1) == Some(0x01) {
             // ping packet
             if packet.length < OLD_MINECRAFT_START.len() {
@@ -193,8 +197,11 @@ impl HelloPacket {
                 });
             }
         } else if packet.get_byte(0) == Some(0x02) && packet.get_byte(1) == Some(0x49) {
-            // connect request old protocol
-            let mut reader = 2;
+            // login request old protocol
+
+            let mut reader = 1;
+            let version = packet.get_byte(reader).ok_or(PacketError::TooSmall)?;
+            reader += 1;
             let username = packet.get_utf16_string(reader)?;
             reader += 2 + username.len() * 2;
             let hostname = packet.get_utf16_string(reader)?;
@@ -204,22 +211,24 @@ impl HelloPacket {
             return Ok(HelloPacket {
                 length: reader,
                 id: 0,
-                version: 0,
+                version: version as i32,
                 port,
                 hostname,
             });
         }
+        /*
+                            NEW PROTOCOL
+         */
         let pkg_length = packet.get_varint(reader)?;
         reader += pkg_length.size;
         let id = packet.get_varint(reader)?;
         reader += id.size;
-        let version = packet.get_varint(reader)?;
         // if not handshake packet return
-        if id.value != 0
-        /* handshake packet id */
-        {
+        if id.value != 0 {
             return Err(PacketError::NotValid);
         }
+
+        let version = packet.get_varint(reader)?;
         reader += version.size;
 
         let (hostname, hostname_len) = packet.get_utf8_string(reader)?;

@@ -1,5 +1,6 @@
 // unit tests for the library
 use crate::datatypes::{HelloPacket, VarInt, Packet};
+use rand;
 
 struct TestHelloPacket {
     name: String,
@@ -71,7 +72,7 @@ mod tests {
                 packet: HelloPacket {
                     length: 158,
                     id: 0,
-                    version: 0,
+                    version: 73,
                     hostname: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                         .parse()
                         .unwrap(),
@@ -88,7 +89,7 @@ mod tests {
                 packet: HelloPacket {
                     length: 50,
                     id: 0,
-                    version: 0,
+                    version: 73,
                     hostname: "localhost".parse().unwrap(),
                     port: 25565,
                 },
@@ -103,20 +104,20 @@ mod tests {
                 packet: HelloPacket {
                     length: 50,
                     id: 0,
-                    version: 0,
+                    version: 73,
                     hostname: "localhost".parse().unwrap(),
                     port: 25565,
                 },
             },
             TestHelloPacket {
                 name: "connect with new server".to_string(),
-                buffer: vec![
+                buffer: vec![    //|
                     16, 0, 249, 5, 9, 108, 111, 99, 97, 108, 104, 111, 115, 116, 99, 221, 1,
                 ],
                 packet: HelloPacket {
                     length: 17,
                     id: 0,
-                    version: 249,
+                    version: 761,
                     hostname: "localhost".parse().unwrap(),
                     port: 25565,
                 },
@@ -175,5 +176,29 @@ mod tests {
             let value = VarInt::new(&*test.buffer.clone(), 0).unwrap();
             assert_eq!(value, test.value);
         });
+    }
+    #[test]
+    // should not panic!
+    fn test_random_bytes() {
+        for _ in 0..1000 {
+            let mut size = (rand::random::<char>()as usize) & 0xfff ;
+            let mut buffer = vec![0; size];
+            for i in 0..size {
+                buffer[i] = rand::random::<char>() as u8;
+            }
+            println!("Testing random bytes with len {}...", size);
+            let mut packet = Packet::new();
+            packet.add_data(&buffer, size);
+
+            assert_eq!(packet.data, buffer);
+
+            let hellopkg = HelloPacket::new(packet);
+            match hellopkg {
+                Ok(hello) => {}
+                Err(e) => {
+                    println!("Error: {:?}", e);
+                }
+            }
+        }
     }
 }
