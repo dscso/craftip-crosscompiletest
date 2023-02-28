@@ -1,5 +1,5 @@
 // unit tests for the library
-use crate::datatypes::{HelloPacket, VarInt, Packet};
+use crate::datatypes::{HelloPacket, Packet, VarInt};
 use rand;
 
 struct TestHelloPacket {
@@ -133,6 +133,7 @@ mod tests {
             assert_eq!(packet, test.packet);
         });
     }
+
     #[test]
     fn test_varint() {
         let test_vector = vec![
@@ -159,16 +160,22 @@ mod tests {
                 },
             },
             TestVarInt {
-                buffer: vec![ 0xff, 0xff, 0xff, 0xff, 0x07 ],
-                value: VarInt { value:  2147483647 , size: 5 },
+                buffer: vec![0xff, 0xff, 0xff, 0xff, 0x07],
+                value: VarInt {
+                    value: 2147483647,
+                    size: 5,
+                },
             },
             TestVarInt {
-                buffer: vec![ 0xff, 0xff, 0xff, 0xff, 0x0f ],
-                value: VarInt { value:  -1 , size: 5 },
+                buffer: vec![0xff, 0xff, 0xff, 0xff, 0x0f],
+                value: VarInt { value: -1, size: 5 },
             },
             TestVarInt {
-                buffer: vec![ 0x80, 0x80, 0x80, 0x80, 0x08 ],
-                value: VarInt { value:   -2147483648  , size: 5 },
+                buffer: vec![0x80, 0x80, 0x80, 0x80, 0x08],
+                value: VarInt {
+                    value: -2147483648,
+                    size: 5,
+                },
             },
         ];
         test_vector.iter().for_each(|test| {
@@ -177,11 +184,12 @@ mod tests {
             assert_eq!(value, test.value);
         });
     }
+
     #[test]
     // should not panic!
     fn test_random_bytes() {
         for _ in 0..1000 {
-            let mut size = (rand::random::<char>()as usize) & 0xfff ;
+            let mut size = (rand::random::<char>() as usize) & 0xfff;
             let mut buffer = vec![0; size];
             for i in 0..size {
                 buffer[i] = rand::random::<char>() as u8;

@@ -68,6 +68,7 @@ pub(crate) struct HelloPacket {
     pub hostname: String,
     pub port: u32,
 }
+
 #[derive(Debug, Clone)]
 pub struct Packet {
     pub length: usize,
@@ -169,8 +170,8 @@ impl HelloPacket {
     pub fn new(packet: Packet) -> Result<HelloPacket, PacketError> {
         let mut reader: usize = 0;
         /*
-                            OLD PROTOCOL
-         */
+                           OLD PROTOCOL
+        */
         if packet.get_byte(0) == Some(0xFE) && packet.get_byte(1) == Some(0x01) {
             // ping packet
             if packet.length < OLD_MINECRAFT_START.len() {
@@ -198,7 +199,6 @@ impl HelloPacket {
             }
         } else if packet.get_byte(0) == Some(0x02) && packet.get_byte(1) == Some(0x49) {
             // login request old protocol
-
             let mut reader = 1;
             let version = packet.get_byte(reader).ok_or(PacketError::TooSmall)?;
             reader += 1;
@@ -217,8 +217,8 @@ impl HelloPacket {
             });
         }
         /*
-                            NEW PROTOCOL
-         */
+                           NEW PROTOCOL
+        */
         let pkg_length = packet.get_varint(reader)?;
         reader += pkg_length.size;
         let id = packet.get_varint(reader)?;
