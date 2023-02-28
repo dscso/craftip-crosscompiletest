@@ -1,3 +1,4 @@
+use bytes::BytesMut;
 use thiserror::Error;
 
 const OLD_MINECRAFT_START: [u8; 27] = [
@@ -61,7 +62,7 @@ pub enum PacketError {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub(crate) struct HelloPacket {
+pub struct MCHelloPacket {
     pub length: usize,
     pub id: i32,
     pub version: i32,
@@ -166,12 +167,16 @@ impl Packet {
     }
 }
 
-impl HelloPacket {
-    pub fn new(packet: Packet) -> Result<HelloPacket, PacketError> {
+impl MCHelloPacket {
+    pub fn new(buf: &BytesMut) -> Result<MCHelloPacket, PacketError> {
         let mut reader: usize = 0;
         /*
                            OLD PROTOCOL
         */
+        let packet = Packet {
+            length: buf.len(),
+            data: buf.to_vec(),
+        };
         if packet.get_byte(0) == Some(0xFE) && packet.get_byte(1) == Some(0x01) {
             // ping packet
             if packet.length < OLD_MINECRAFT_START.len() {
@@ -189,8 +194,9 @@ impl HelloPacket {
                     .get_u32(30 + 2 + hostname.len() * 2)
                     .ok_or(PacketError::TooSmall)?;
 
-                return Ok(HelloPacket {
-                    length: 30 + 2 /* hostnamesize */ + hostname.len() * 2 /* utf16 */ + 4, /* port */
+                return Ok(MCHelloPacket {
+                    length: 30 + 2 /* hostnamesize */ + hostname.len() * 2 /* utf16 */ + 4,
+                    /* port */
                     id: 0,
                     version: version as i32,
                     port,
@@ -208,7 +214,7 @@ impl HelloPacket {
             reader += 2 + hostname.len() * 2;
             let port = packet.get_u32(reader).ok_or(PacketError::TooSmall)?;
             reader += 4;
-            return Ok(HelloPacket {
+            return Ok(MCHelloPacket {
                 length: reader,
                 id: 0,
                 version: version as i32,
@@ -240,7 +246,7 @@ impl HelloPacket {
         let next_state = packet.get_varint(reader)?;
         reader += next_state.size;
 
-        Ok(HelloPacket {
+        Ok(MCHelloPacket {
             length: reader,
             id: id.value,
             port: port as u32,
@@ -249,3 +255,6 @@ impl HelloPacket {
         })
     }
 }
+
+
+pub struct SocketPacket {}

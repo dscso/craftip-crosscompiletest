@@ -1,11 +1,14 @@
 mod datatypes;
 mod test;
+mod client_handler;
 
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 
 use std::env;
 use std::error::Error;
+use std::sync::Arc;
+use tokio::sync::{mpsc, Mutex};
 use thiserror::Error;
 
 use crate::datatypes::*;
@@ -16,61 +19,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .nth(1)
         .unwrap_or_else(|| "127.0.0.1:25565".to_string());
 
-    // Next up we create a TCP listener which will listen for incoming
-    // connections. This TCP listener is bound to the address we determined
-    // above and must be associated with an event loop.
     let mc_listener = TcpListener::bind(&addr).await?;
     println!("Listening on: {}", addr);
 
+    let state = Arc::new(Mutex::new(client_handler::Shared::new()));
     loop {
-        // Asynchronously wait for an inbound socket.
-        let (mut socket, _) = mc_listener.accept().await?;
-
-        // And this is where much of the magic of this server happens. We
-        // crucially want all clients to make progress concurrently, rather than
-        // blocking one on completion of another. To achieve this we use the
-        // `tokio::spawn` function to execute the work in the background.
-        //
-        // Essentially here we're executing a new task to run concurrently,
-        // which will allow all of our clients to be processed concurrently.
-
+        let (mut socket, addr) = mc_listener.accept().await?;
+        let state = Arc::clone(&state);
         tokio::spawn(async move {
-            let mut packet = Packet::new();
-            let mut first_packet = false;
-
-            // In a loop, read data from the socket and write the data back.
-            loop {
-                let mut buf: Vec<u8> = vec![0; 1024];
-                let n = socket
-                    .read(&mut buf)
-                    .await
-                    .expect("failed to read data from socket");
-
-                if n == 0 {
-                    return;
-                }
-
-                packet.add_data(&buf, n); // adding frame to packet buffer
-
-                //println!("len: {} {:?}", packet.length, &packet.data[..packet.length]);
-
-                if !first_packet {
-                    let hello_packet = HelloPacket::new(packet.clone());
-                    match hello_packet {
-                        Ok(hello_packet) => {
-                            println!("hello packet: {:?}", hello_packet);
-                            packet.flush_packet(hello_packet.length);
-                            first_packet = true;
-                        }
-                        Err(e) => {
-                            if e == PacketError::TooSmall {
-                                continue;
-                            }
-                            println!("error: {:?}", e);
-                        }
-                    }
-                }
-            }
+            client_handler::process_socket_connection(socket, addr, state).await.expect("TODO: panic message");
         });
     }
 }
