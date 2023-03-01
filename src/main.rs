@@ -1,17 +1,14 @@
+mod client_handler;
 mod datatypes;
 mod test;
-mod client_handler;
 
-use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 
 use std::env;
 use std::error::Error;
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
-use thiserror::Error;
+use tokio::sync::{Mutex};
 
-use crate::datatypes::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -27,7 +24,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let (mut socket, addr) = mc_listener.accept().await?;
         let state = Arc::clone(&state);
         tokio::spawn(async move {
-            client_handler::process_socket_connection(socket, addr, state).await.expect("TODO: panic message");
+            client_handler::process_socket_connection(socket, addr, state)
+                .await
+                .expect("TODO: panic message");
         });
     }
 }

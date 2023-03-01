@@ -1,22 +1,22 @@
 use std::collections::HashMap;
 use std::error::Error;
-use std::{cmp, fmt, io};
 use std::sync::Arc;
-use tokio::io::AsyncReadExt;
+use std::{fmt, io};
+
 use std::net::SocketAddr;
+use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex};
-use tokio::net::{TcpListener, TcpStream};
 use tokio_stream::StreamExt;
 use tokio_util::codec::{Decoder, Framed, LinesCodec};
 
 use futures::SinkExt;
 use tracing;
 
-use std::env;
 use bytes::{Buf, BytesMut};
-use crate::client_handler::SocketPacket::MCData;
+use std::env;
+use tokio::io::AsyncWriteExt;
 
-use crate::datatypes::{MCHelloPacket, Packet, PacketError};
+use crate::datatypes::{MCHelloPacket, PacketFrame, PacketError};
 
 pub struct Shared {
     pub peers: HashMap<SocketAddr, Tx>,
@@ -82,11 +82,15 @@ impl Peer {
     }
 }
 
-
-pub async fn process_socket_connection(socket: TcpStream, addr: SocketAddr, state: Arc<Mutex<Shared>>) -> Result<(), Box<dyn Error>> {
+pub async fn process_socket_connection(
+    socket: TcpStream,
+    addr: SocketAddr,
+    state: Arc<Mutex<Shared>>,
+) -> Result<(), Box<dyn Error>> {
     let mut frames = Framed::new(socket, PacketCodec::new(1000));
     // In a loop, read data from the socket and write the data back.
     loop {
+        print!(",");
         let packet = match frames.next().await {
             Some(packet) => packet,
             None => {
@@ -100,9 +104,10 @@ pub async fn process_socket_connection(socket: TcpStream, addr: SocketAddr, stat
                 match packet {
                     SocketPacket::HelloPacket(hello_packet) => {
                         println!("Hello packet: {:?}", hello_packet);
+                        frames.get_mut().shutdown().await?;
                     }
                     _ => {
-                        //println!("...");
+                        println!("diff packet   ");
                     }
                 }
             }
@@ -225,9 +230,12 @@ impl Decoder for PacketCodec {
         if buf.len() < 1 {
             return Ok(None);
         }
+        if buf.len() > self.max_length {
+            return Err(PacketCodecError::MaxLineLengthExceeded);
+        }
         return match self.connection_type {
             ConnectionType::Unknown => {
-                let hello_packet = MCHelloPacket::new(buf);
+                let hello_packet = MCHelloPacket::new(buf.to_vec());
                 match hello_packet {
                     Ok(hello_packet) => {
                         buf.advance(hello_packet.length);
@@ -235,16 +243,10 @@ impl Decoder for PacketCodec {
                         self.connection_type = ConnectionType::MCClient;
                         Ok(Some(SocketPacket::HelloPacket(hello_packet)))
                     }
-                    Err(e) => {
-                        match e {
-                            PacketError::TooSmall => {
-                                Ok(None)
-                            }
-                            _ => {
-                                Err(PacketCodecError::PacketError(e))
-                            }
-                        }
-                    }
+                    Err(e) => match e {
+                        PacketError::TooSmall => Ok(None),
+                        _ => Err(PacketCodecError::PacketError(e)),
+                    },
                 }
             }
             ConnectionType::ProxyClient => {
