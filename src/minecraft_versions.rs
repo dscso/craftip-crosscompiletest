@@ -1,8 +1,8 @@
 use bytes::Buf;
-use std::mem::{size_of};
+use std::mem::size_of;
 
-use crate::datatypes::{PacketError};
 use crate::cursor::{CustomCursor, CustomCursorMethods};
+use crate::datatypes::PacketError;
 
 const OLD_MINECRAFT_START: [u8; 27] = [
     0xFE, 0x01, 0xFA, 0x00, 0x0B, 0x00, 0x4D, 0x00, 0x43, 0x00, 0x7C, 0x00, 0x50, 0x00, 0x69, 0x00,

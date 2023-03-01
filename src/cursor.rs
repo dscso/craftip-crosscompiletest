@@ -1,14 +1,7 @@
+use crate::datatypes::{get_varint, PacketError};
+use bytes::Buf;
 use std::io::Cursor;
 use std::mem::size_of;
-use bytes::Buf;
-use crate::datatypes::{get_varint, PacketError};
-
-#[derive(Debug, Clone)]
-pub struct PacketFrame {
-    pub length: usize,
-    pub reader: usize,
-    pub data: Vec<u8>,
-}
 
 pub type CustomCursor = Cursor<Vec<u8>>;
 
@@ -42,7 +35,8 @@ impl CustomCursorMethods for CustomCursor {
         let start_postion = self.position();
         let size = self.get_varint()? as usize;
         self.throw_error_if_smaller(size)?;
-        let blob = self.get_ref()[self.position() as usize..self.position() as usize + size].to_owned();
+        let blob =
+            self.get_ref()[self.position() as usize..self.position() as usize + size].to_owned();
         let result = String::from_utf8(blob);
         self.set_position(self.position() + size as u64);
         match result {
@@ -63,16 +57,12 @@ impl CustomCursorMethods for CustomCursor {
             return Err(PacketError::TooSmall);
         }
         self.throw_error_if_smaller(size * 2)?;
-        let iter = (0..size).map(|_| {
-            self.get_u16()
-        });
+        let iter = (0..size).map(|_| self.get_u16());
 
         let result = std::char::decode_utf16(iter).collect::<Result<String, _>>();
 
         match result {
-            Ok(s) => {
-                Ok(s)
-            }
+            Ok(s) => Ok(s),
             Err(_) => {
                 self.set_position(courser_start);
                 Err(PacketError::NotValidStringEncoding)

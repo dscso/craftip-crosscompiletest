@@ -1,7 +1,6 @@
 // unit tests for the library
-use rand;
 use crate::minecraft_versions::MCHelloPacket;
-
+use rand;
 
 #[cfg(test)]
 mod tests {
@@ -172,28 +171,28 @@ mod tests {
         });
     }
     /*
-        #[test]
-        // should not panic!
-        fn test_random_bytes() {
-            for _ in 0..1000 {
-                let mut size = (rand::random::<char>() as usize) & 0xfff;
-                let mut buffer = vec![0; size];
-                for i in 0..size {
-                    buffer[i] = rand::random::<char>() as u8;
-                }
-                println!("Testing random bytes with len {}...", size);
-                let mut packet = PacketFrame::new();
-                packet.add_data(&buffer, size);
+    #[test]
+    // should not panic!
+    fn test_random_bytes() {
+        for _ in 0..1000 {
+            let mut size = (rand::random::<char>() as usize) & 0xfff;
+            let mut buffer = vec![0; size];
+            for i in 0..size {
+                buffer[i] = rand::random::<char>() as u8;
+            }
+            println!("Testing random bytes with len {}...", size);
+            let mut packet = PacketFrame::new();
+            packet.add_data(&buffer, size);
 
-                assert_eq!(packet.data, buffer);
+            assert_eq!(packet.data, buffer);
 
-                let hellopkg = MCHelloPacket::new(packet);
-                match hellopkg {
-                    Ok(hello) => {}
-                    Err(e) => {
-                        println!("Error: {:?}", e);
-                    }
+            let hellopkg = MCHelloPacket::new(packet);
+            match hellopkg {
+                Ok(hello) => {}
+                Err(e) => {
+                    println!("Error: {:?}", e);
                 }
             }
-        }*/
+        }
+    }*/
 }

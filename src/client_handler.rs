@@ -9,14 +9,12 @@ use tokio::sync::{mpsc, Mutex};
 use tokio_stream::StreamExt;
 use tokio_util::codec::{Decoder, Framed, LinesCodec};
 
-use futures::SinkExt;
 use tracing;
 
 use bytes::{Buf, BytesMut};
-use std::env;
 use tokio::io::AsyncWriteExt;
 
-use crate::datatypes::{PacketError};
+use crate::datatypes::PacketError;
 use crate::minecraft_versions::MCHelloPacket;
 
 pub struct Shared {
@@ -101,17 +99,15 @@ pub async fn process_socket_connection(
         };
 
         match packet {
-            Ok(packet) => {
-                match packet {
-                    SocketPacket::HelloPacket(hello_packet) => {
-                        println!("Hello packet: {:?}", hello_packet);
-                        frames.get_mut().shutdown().await?;
-                    }
-                    _ => {
-                        println!("diff packet   ");
-                    }
+            Ok(packet) => match packet {
+                SocketPacket::HelloPacket(hello_packet) => {
+                    println!("Hello packet: {:?}", hello_packet);
+                    frames.get_mut().shutdown().await?;
                 }
-            }
+                _ => {
+                    println!("diff packet   ");
+                }
+            },
             Err(e) => {
                 println!("error: {:?}", e);
                 return Ok(());
@@ -192,13 +188,6 @@ pub struct MCDataPacket {
     pub data: Vec<u8>,
 }
 
-impl MCDataPacket {
-    fn new(buf: BytesMut) -> MCDataPacket {
-        let length = buf.len();
-        let data = buf.to_vec();
-        MCDataPacket { length, data }
-    }
-}
 
 // todo
 pub struct ProxyPacket {

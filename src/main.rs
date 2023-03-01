@@ -1,16 +1,15 @@
 mod client_handler;
-mod datatypes;
-mod test;
-mod minecraft_versions;
 mod cursor;
+mod datatypes;
+mod minecraft_versions;
+mod test;
 
 use tokio::net::TcpListener;
 
 use std::env;
 use std::error::Error;
 use std::sync::Arc;
-use tokio::sync::{Mutex};
-
+use tokio::sync::Mutex;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
