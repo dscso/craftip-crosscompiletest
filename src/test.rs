@@ -1,22 +1,23 @@
 // unit tests for the library
-use crate::datatypes::{MCHelloPacket, PacketFrame};
 use rand;
+use crate::minecraft_versions::MCHelloPacket;
 
-struct TestHelloPacket {
-    name: String,
-    buffer: Vec<u8>,
-    packet: MCHelloPacket,
-}
-
-struct TestVarInt {
-    buffer: Vec<u8>,
-    value: (i32, usize),
-}
 
 #[cfg(test)]
 mod tests {
-    use crate::test::{TestHelloPacket, TestVarInt};
-    use crate::datatypes::{get_varint, MCHelloPacket};
+    use crate::datatypes::get_varint;
+    use crate::minecraft_versions::MCHelloPacket;
+
+    struct TestHelloPacket {
+        name: String,
+        buffer: Vec<u8>,
+        packet: MCHelloPacket,
+    }
+
+    struct TestVarInt {
+        buffer: Vec<u8>,
+        value: (i32, usize),
+    }
 
     #[test]
     fn test_hello_packet_ping() {

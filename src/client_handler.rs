@@ -16,7 +16,8 @@ use bytes::{Buf, BytesMut};
 use std::env;
 use tokio::io::AsyncWriteExt;
 
-use crate::datatypes::{MCHelloPacket, PacketFrame, PacketError};
+use crate::datatypes::{PacketError};
+use crate::minecraft_versions::MCHelloPacket;
 
 pub struct Shared {
     pub peers: HashMap<SocketAddr, Tx>,

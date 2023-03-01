@@ -1,6 +1,8 @@
 mod client_handler;
 mod datatypes;
 mod test;
+mod minecraft_versions;
+mod cursor;
 
 use tokio::net::TcpListener;
 
