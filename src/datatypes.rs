@@ -82,19 +82,18 @@ impl CustomCursorMethods for CustomCursor {
     }
     /// Returns the string and the size of the string (including the size) in bytes
     fn get_utf8_string(&mut self) -> Result<String, PacketError> {
-        let start = self.position() as usize;
-        let string_len = self.see_varint(start)?;
-        let size = string_len as usize;
-        if self.get_ref().len() <= start + size {
-            return Err(PacketError::TooSmall);
-        }
-        let result = String::from_utf8(self.get_ref()[start + 1..start + 1 + size].to_owned());
+        let start_postion = self.position();
+        let size = self.get_varint()? as usize;
+        self.throw_error_if_smaller(size)?;
+        let blob = self.get_ref()[self.position() as usize..self.position() as usize + size].to_owned();
+        let result = String::from_utf8(blob);
+        self.set_position(self.position() + size as u64);
         match result {
-            Ok(s) => {
-                self.set_position(string_len as u64 + string_len as u64 + self.position());
-                Ok(s)
+            Ok(s) => Ok(s),
+            Err(_) => {
+                self.set_position(start_postion);
+                Err(PacketError::NotValidStringEncoding)
             }
-            Err(_) => Err(PacketError::NotValidStringEncoding),
         }
     }
     /// reads length and string from the buffer
@@ -159,16 +158,12 @@ impl MCHelloPacket {
 
         match MCHelloPacket::old_ping_pkg(cursor.clone()) {
             Ok(pkg) => return Ok(pkg),
-            Err(PacketError::NotMatching) => {
-                println!("Not matching old ping pkg")
-            }
+            Err(PacketError::NotMatching) => {}
             Err(e) => return Err(e),
         }
         match MCHelloPacket::old_connect_pkg(cursor.clone()) {
             Ok(pkg) => return Ok(pkg),
-            Err(PacketError::NotMatching) => {
-                println!("Not matching old conn pkg")
-            }
+            Err(PacketError::NotMatching) => {}
             Err(e) => return Err(e),
         }
         match MCHelloPacket::new_pkg(cursor.clone()) {
@@ -179,7 +174,8 @@ impl MCHelloPacket {
 
         Err(PacketError::NotMatching)
     }
-    pub fn old_ping_pkg(mut cursor: CustomCursor) -> Result<MCHelloPacket, PacketError> {
+
+    fn old_ping_pkg(mut cursor: CustomCursor) -> Result<MCHelloPacket, PacketError> {
         if !cursor.match_bytes(&[0xFE, 0x01]) {
             return Err(PacketError::NotMatching);
         }
@@ -209,11 +205,12 @@ impl MCHelloPacket {
             hostname,
         });
     }
-    pub fn old_connect_pkg(mut cursor: CustomCursor) -> Result<MCHelloPacket, PacketError> {
-        println!(" courser pos {:?}", String::from_utf8_lossy(cursor.get_ref()));
-        if !cursor.match_bytes(&[0x02, 0x49]) {
+    fn old_connect_pkg(mut cursor: CustomCursor) -> Result<MCHelloPacket, PacketError> {
+        if !cursor.match_bytes(&[0x02]) {
             return Err(PacketError::NotMatching);
         }
+        // todo test if this is really the version!
+        let version = cursor.get_u8();
         // wait for the packet to fully arrive
         let _username = cursor.get_utf16_string()?;
         let hostname = cursor.get_utf16_string()?;
@@ -223,27 +220,30 @@ impl MCHelloPacket {
         return Ok(MCHelloPacket {
             length: cursor.position() as usize,
             id: 0,
-            version: 0,
+            version: version as i32,
             port,
             hostname,
         });
     }
 
-    pub fn new_pkg(mut cursor: CustomCursor) -> Result<MCHelloPacket, PacketError> {
+    fn new_pkg(mut cursor: CustomCursor) -> Result<MCHelloPacket, PacketError> {
         let pkg_length = cursor.get_varint()?;
-        let pkg_type = cursor.get_varint()?;
-        if pkg_type != 0 {
+        let pkg_id = cursor.get_varint()?;
+        if pkg_id != 0 {
             return Err(PacketError::NotMatching);
         }
         let version = cursor.get_varint()?;
         let hostname = cursor.get_utf8_string()?;
         cursor.throw_error_if_smaller(size_of::<u16>())?;
         let port = cursor.get_u16();
+        if cursor.position() as usize != pkg_length as usize {
+            return Err(PacketError::NotValid);
+        }
         Ok(MCHelloPacket {
-            length: pkg_length as usize,
-            id: pkg_type,
+            length: cursor.position() as usize,
+            id: pkg_id,
             port: port as u32,
-            version: version,
+            version,
             hostname,
         })
     }

@@ -16,8 +16,7 @@ struct TestVarInt {
 #[cfg(test)]
 mod tests {
     use crate::test::{TestHelloPacket, TestVarInt};
-    use crate::{MCHelloPacket, PacketFrame};
-    use crate::datatypes::get_varint;
+    use crate::datatypes::{get_varint, MCHelloPacket};
 
     #[test]
     fn test_hello_packet_ping() {
@@ -114,10 +113,10 @@ mod tests {
                 name: "connect with new server".to_string(),
                 buffer: vec![
                     //|
-                    16, 0, 249, 5, 9, 108, 111, 99, 97, 108, 104, 111, 115, 116, 99, 221, 1,
+                    16, 0, 249, 5, 9, 108, 111, 99, 97, 108, 104, 111, 115, 116, 99, 221,
                 ],
                 packet: MCHelloPacket {
-                    length: 17,
+                    length: 16,
                     id: 0,
                     version: 761,
                     hostname: "localhost".parse().unwrap(),
