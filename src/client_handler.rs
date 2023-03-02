@@ -106,9 +106,11 @@ pub async fn process_socket_connection(
     addr: SocketAddr,
     state: Arc<Mutex<Shared>>,
 ) -> Result<(), Box<dyn Error>> {
+    tracing::info!("new connection from: {}", addr);
     let mut frames = Framed::new(socket, PacketCodec::new(1000));
     // In a loop, read data from the socket and write the data back.
     let packet = frames.next().await.ok_or(PacketError::NotValid)??;
+    tracing::info!("received new packet: {:?}", packet);
 
 
     let mut connection: Client = match packet {
@@ -116,6 +118,7 @@ pub async fn process_socket_connection(
         SocketPacket::HelloProxyPacket(proxy_packet) => Client::new_proxy_client(state.clone(), frames, proxy_packet).await?,
         _ => unimplemented!()
     };
+    tracing::info!("waiting for new packets");
     loop {
         tokio::select! {
             // A message was received from a peer. Send it to the current user.
@@ -147,7 +150,10 @@ pub async fn process_socket_connection(
                     );
                 }
                 // The stream has been exhausted.
-                None => break,
+                None => {
+                    tracing::info!("connection closed to {addr} closed!");
+                    break;
+                },
             },
         }
         //frames.send("Helloaksjdlaksjdklasjdlkasjdlkasjdlsakj".to_string()).await?;
@@ -241,6 +247,7 @@ impl ProxyPacket {
 pub enum SocketPacket {
     HelloPacket(MCHelloPacket),
     MCData(BytesMut),
+    // todo: create hello proxy packet
     HelloProxyPacket(String),
     ProxyPacket(ProxyPacket),
     UnknownPacket,
