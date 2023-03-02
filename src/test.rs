@@ -1,16 +1,16 @@
 // unit tests for the library
-use crate::minecraft_versions::MCHelloPacket;
+use crate::minecraft::MinecraftHelloPacket;
 use rand;
 
 #[cfg(test)]
 mod tests {
     use crate::datatypes::get_varint;
-    use crate::minecraft_versions::MCHelloPacket;
+    use crate::minecraft::MinecraftHelloPacket;
 
     struct TestHelloPacket {
         name: String,
         buffer: Vec<u8>,
-        packet: MCHelloPacket,
+        packet: MinecraftHelloPacket,
     }
 
     struct TestVarInt {
@@ -33,7 +33,7 @@ mod tests {
                     97, 0, 97, 0, 97, 0, 97, 0, 97, 0, 97, 0, 97, 0, 97, 0, 97, 0, 97, 0, 97, 0,
                     97, 0, 97, 0, 97, 0, 0, 99, 221,
                 ],
-                packet: MCHelloPacket {
+                packet: MinecraftHelloPacket {
                     length: 162,
                     id: 0,
                     version: 73,
@@ -49,7 +49,7 @@ mod tests {
                     254, 1, 250, 0, 11, 0, 77, 0, 67, 0, 124, 0, 80, 0, 105, 0, 110, 0, 103, 0, 72,
                     0, 111, 0, 115, 0, 116, 0, 11, 73, 0, 2, 0, 104, 0, 105, 0, 0, 99, 221,
                 ],
-                packet: MCHelloPacket {
+                packet: MinecraftHelloPacket {
                     length: 40,
                     id: 0,
                     version: 73,
@@ -69,7 +69,7 @@ mod tests {
                     97, 0, 97, 0, 97, 0, 97, 0, 97, 0, 97, 0, 97, 0, 97, 0, 97, 0, 97, 0, 97, 0,
                     97, 0, 0, 99, 221,
                 ],
-                packet: MCHelloPacket {
+                packet: MinecraftHelloPacket {
                     length: 158,
                     id: 0,
                     version: 73,
@@ -86,7 +86,7 @@ mod tests {
                     101, 0, 101, 0, 110, 0, 9, 0, 108, 0, 111, 0, 99, 0, 97, 0, 108, 0, 104, 0,
                     111, 0, 115, 0, 116, 0, 0, 99, 221,
                 ],
-                packet: MCHelloPacket {
+                packet: MinecraftHelloPacket {
                     length: 50,
                     id: 0,
                     version: 73,
@@ -101,7 +101,7 @@ mod tests {
                     101, 0, 101, 0, 110, 0, 9, 0, 108, 0, 111, 0, 99, 0, 97, 0, 108, 0, 104, 0,
                     111, 0, 115, 0, 116, 0, 0, 99, 221, 0, 0, 0, 0, 1, 2, 3, 4,
                 ],
-                packet: MCHelloPacket {
+                packet: MinecraftHelloPacket {
                     length: 50,
                     id: 0,
                     version: 73,
@@ -115,7 +115,7 @@ mod tests {
                     //|
                     16, 0, 249, 5, 9, 108, 111, 99, 97, 108, 104, 111, 115, 116, 99, 221,
                 ],
-                packet: MCHelloPacket {
+                packet: MinecraftHelloPacket {
                     length: 16,
                     id: 0,
                     version: 761,
@@ -126,7 +126,7 @@ mod tests {
         ];
         test_vector.iter().for_each(|test| {
             println!("Testing {}...", test.name);
-            let packet = MCHelloPacket::new(test.buffer.clone()).unwrap();
+            let packet = MinecraftHelloPacket::new(test.buffer.clone()).unwrap();
 
             assert_eq!(packet, test.packet);
         });

@@ -14,9 +14,11 @@ use tracing;
 use bytes::{Buf, BufMut, BytesMut};
 use futures::SinkExt;
 use tokio::io::AsyncWriteExt;
-
 use crate::datatypes::PacketError;
-use crate::minecraft_versions::MCHelloPacket;
+
+use crate::minecraft::{MinecraftHelloPacket, MinecraftPacket};
+use crate::packet_codec::PacketCodec;
+use crate::proxy::ProxyPacket;
 
 pub struct Shared {
     pub clients: HashMap<SocketAddr, Tx>,
@@ -68,7 +70,7 @@ impl Client {
     async fn new_mc_client(
         state: Arc<Mutex<Shared>>,
         packet: Framed<TcpStream, PacketCodec>,
-        hello_packet: MCHelloPacket,
+        hello_packet: MinecraftHelloPacket,
     ) -> io::Result<Client> {
         // Get the client socket address
         let addr = packet.get_ref().peer_addr()?;
@@ -113,11 +115,11 @@ pub async fn process_socket_connection(
     tracing::info!("received new packet: {:?}", packet);
 
 
-    let mut connection: Client = match packet {
-        SocketPacket::HelloPacket(hello_packet) => Client::new_mc_client(state.clone(), frames, hello_packet).await?,
-        SocketPacket::HelloProxyPacket(proxy_packet) => Client::new_proxy_client(state.clone(), frames, proxy_packet).await?,
-        _ => unimplemented!()
-    };
+    /*let mut connection: Client = match packet {
+         SocketPacket::HelloPacket(hello_packet) => Client::new_mc_client(state.clone(), frames, hello_packet).await?,
+         SocketPacket::HelloProxyPacket(proxy_packet) => Client::new_proxy_client(state.clone(), frames, proxy_packet).await?,
+         _ => unimplemented!()
+     };
     tracing::info!("waiting for new packets");
     loop {
         tokio::select! {
@@ -158,7 +160,7 @@ pub async fn process_socket_connection(
         }
         //frames.send("Helloaksjdlaksjdklasjdlkasjdlkasjdlsakj".to_string()).await?;
         //let peer = Peer::new(state.clone(), frames).await?;
-    }
+    }*/
     Ok(())
 }
 
@@ -174,145 +176,19 @@ pub enum Protocol {
     Proxy(u32),
 }
 
-pub struct PacketCodec {
-    max_length: usize,
-    connection_type: ConnectionType,
-    protocol: Protocol,
-}
-
-impl PacketCodec {
-    /// Returns a `PacketCodec` for splitting up data into packets.
-    pub fn new(max_length: usize) -> PacketCodec {
-        PacketCodec {
-            max_length,
-            connection_type: ConnectionType::Unknown,
-            protocol: Protocol::Unknown,
-        }
-    }
-}
-
-/// An error occurred while encoding or decoding a line.
-#[derive(Debug)]
-pub enum PacketCodecError {
-    /// The maximum line length was exceeded.
-    MaxLineLengthExceeded,
-    PacketError(PacketError),
-    /// An IO error occurred.
-    Io(io::Error),
-}
-
-impl fmt::Display for PacketCodecError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PacketCodecError::MaxLineLengthExceeded => write!(f, "max line length exceeded"),
-            PacketCodecError::Io(e) => write!(f, "{}", e),
-            _ => {
-                write!(f, "packet error")
-            }
-        }
-    }
-}
-
-impl From<io::Error> for PacketCodecError {
-    fn from(e: io::Error) -> PacketCodecError {
-        PacketCodecError::Io(e)
-    }
-}
-
-impl std::error::Error for PacketCodecError {}
-
-#[derive(Debug)]
-pub struct MCDataPacket {
-    pub length: usize,
-    pub data: Vec<u8>,
-}
-
-
-// todo
-#[derive(Debug)]
-pub struct ProxyPacket {
-    pub length: usize,
-    pub data: Vec<u8>,
-}
-
-impl ProxyPacket {
-    fn new(buf: &mut BytesMut) -> Option<ProxyPacket> {
-        let length = buf.len();
-        let data = buf.to_vec();
-        Some(ProxyPacket { length, data })
-    }
-}
 
 #[derive(Debug)]
 pub enum SocketPacket {
-    HelloPacket(MCHelloPacket),
-    MCData(BytesMut),
-    // todo: create hello proxy packet
-    HelloProxyPacket(String),
+    MinecraftPacket(MinecraftPacket),
     ProxyPacket(ProxyPacket),
     UnknownPacket,
 }
 
-impl Decoder for PacketCodec {
-    type Item = SocketPacket;
-    type Error = PacketCodecError;
-
-    fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<SocketPacket>, PacketCodecError> {
-        // otherwise decode gets called very often!
-        if buf.len() < 1 {
-            return Ok(None);
-        }
-        if buf.len() > self.max_length {
-            return Err(PacketCodecError::MaxLineLengthExceeded);
-        }
-        return match self.connection_type {
-            // first packet
-            ConnectionType::Unknown => {
-                let hello_packet = MCHelloPacket::new(buf.to_vec());
-                match hello_packet {
-                    Ok(hello_packet) => {
-                        buf.advance(hello_packet.length);
-                        self.protocol = Protocol::MC(hello_packet.version as u32);
-                        self.connection_type = ConnectionType::MCClient;
-                        Ok(Some(SocketPacket::HelloPacket(hello_packet)))
-                    }
-                    Err(e) => match e {
-                        PacketError::TooSmall => Ok(None),
-                        _ => {
-                            //Err(PacketCodecError::PacketError(e))
-                            self.protocol = Protocol::Proxy(1);
-                            self.connection_type = ConnectionType::ProxyClient;
-                            Ok(Some(SocketPacket::HelloProxyPacket("localhost".to_string())))
-                        }
-                    },
-                }
-            }
-            // when connection is already established
-            ConnectionType::MCClient => {
-                let data = buf.split_to(buf.len());
-                Ok(Some(SocketPacket::MCData(data)))
-            }
-            ConnectionType::ProxyClient => {
-                if let Some(proxy_packet) = ProxyPacket::new(buf) {
-                    buf.advance(proxy_packet.length);
-                    return Ok(Some(SocketPacket::ProxyPacket(proxy_packet)));
-                }
-                Ok(None)
-            }
-        };
+impl SocketPacket {
+    pub fn new_minecraft_packet(packet: MinecraftPacket) -> Self {
+        SocketPacket::MinecraftPacket(packet)
     }
-}
-
-impl<T> Encoder<T> for PacketCodec
-    where
-        T: AsRef<str>,
-{
-    type Error = PacketCodecError;
-
-    fn encode(&mut self, packet: T, buf: &mut BytesMut) -> Result<(), PacketCodecError> {
-        let packet = packet.as_ref();
-        buf.reserve(packet.len());
-        buf.put(packet.as_bytes());
-        Ok(())
+    pub fn new_proxy_packet(packet: ProxyPacket) -> Self {
+        SocketPacket::ProxyPacket(packet)
     }
 }

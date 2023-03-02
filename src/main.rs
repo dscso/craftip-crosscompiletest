@@ -1,8 +1,10 @@
 mod client_handler;
 mod cursor;
 mod datatypes;
-mod minecraft_versions;
+mod minecraft;
 mod test;
+mod proxy;
+mod packet_codec;
 
 use tokio::net::TcpListener;
 
