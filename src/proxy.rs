@@ -1,3 +1,4 @@
+use std::io::BufRead;
 use crate::cursor::{CustomCursor, CustomCursorMethods};
 use crate::datatypes::PacketError;
 
@@ -42,24 +43,30 @@ impl ProxyDataPacket {
 
 impl ProxyPacket {
     pub fn new(buf: Vec<u8>) -> Result<ProxyPacket, PacketError> {
-        let length = buf.len();
-        if length < 1 {
-            return Err(PacketError::TooSmall);
-        }
-        Ok(ProxyPacket::HelloPacket(ProxyHelloPacket {
+        unimplemented!();
+        /*Ok(ProxyPacket::HelloPacket(ProxyHelloPacket {
             length,
-            version: 0,
-            hostname: String::from_utf8_lossy(&buf).parse().unwrap(),
-        }))
+            version: 123123,
+            hostname: line.unwrap(),
+        }))*/
     }
 }
 
 impl ProxyHelloPacket {
     pub fn new(buf: Vec<u8>) -> Result<ProxyHelloPacket, PacketError> {
+        let cursor = CustomCursor::new(buf.clone());
+        let length = buf.len();
+        if length < 1 {
+            return Err(PacketError::TooSmall);
+        }
+        let line = cursor.lines().map(|l| l.unwrap()).next();
+        if line.is_none() {
+            return Err(PacketError::TooSmall);
+        }
         Ok(ProxyHelloPacket {
-            length: 0,
-            version: 0,
-            hostname: "".to_string(),
+            length,
+            version: 123123,
+            hostname: line.unwrap(),
         })
     }
 }

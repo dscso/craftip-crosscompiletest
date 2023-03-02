@@ -1,10 +1,11 @@
 use std::{fmt, io, result};
 use bytes::{Buf, BufMut, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
-use crate::client_handler::{ConnectionType, Protocol, SocketPacket};
+use crate::client_handler::{ConnectionType, Protocol};
 use crate::datatypes::PacketError;
 use crate::proxy::{ProxyDataPacket, ProxyHelloPacket, ProxyPacket};
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket, MinecraftPacket};
+use crate::socket_packet::SocketPacket;
 
 /// An error occurred while encoding or decoding a line.
 #[derive(Debug)]

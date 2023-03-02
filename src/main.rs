@@ -5,6 +5,7 @@ mod minecraft;
 mod test;
 mod proxy;
 mod packet_codec;
+mod socket_packet;
 
 use tokio::net::TcpListener;
 
