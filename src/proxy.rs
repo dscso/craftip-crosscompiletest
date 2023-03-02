@@ -6,6 +6,7 @@ pub enum ProxyPacket {
     HelloPacket(ProxyHelloPacket),
     ClientJoinPacket(ProxyClientJoinPacket),
     DataPacket(ProxyDataPacket),
+    UnknownPacket,
 }
 
 /// ProxyHelloPacket is the first packet sent by the client to the proxy.
@@ -25,15 +26,31 @@ pub struct ProxyClientJoinPacket {
 pub struct ProxyDataPacket {
     pub length: usize,
     pub client_id: u32,
+    pub data: Vec<u8>,
+}
+
+impl ProxyDataPacket {
+    pub(crate) fn new(buf: Vec<u8>) -> Result<ProxyDataPacket, PacketError> {
+        tracing::info!("ProxyDataPacket new");
+        Ok(ProxyDataPacket {
+            length: 0,
+            client_id: 0,
+            data: buf,
+        })
+    }
 }
 
 impl ProxyPacket {
-    pub(crate) fn new(buf: Vec<u8>, first_time: bool) -> Result<ProxyPacket, PacketError> {
+    pub fn new(buf: Vec<u8>) -> Result<ProxyPacket, PacketError> {
         let length = buf.len();
         if length < 1 {
-            return Err(PacketError::NotValid);
+            return Err(PacketError::TooSmall);
         }
-        Ok(ProxyPacket::HelloPacket(ProxyHelloPacket { length: buf.len(), version: 1, hostname: "test".to_string() }))
+        Ok(ProxyPacket::HelloPacket(ProxyHelloPacket {
+            length,
+            version: 0,
+            hostname: String::from_utf8_lossy(&buf).parse().unwrap(),
+        }))
     }
 }
 

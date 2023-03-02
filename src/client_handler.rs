@@ -16,9 +16,10 @@ use futures::SinkExt;
 use tokio::io::AsyncWriteExt;
 use crate::datatypes::PacketError;
 
-use crate::minecraft::{MinecraftHelloPacket, MinecraftPacket};
-use crate::packet_codec::PacketCodec;
-use crate::proxy::ProxyPacket;
+use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket, MinecraftPacket};
+use crate::packet_codec::{PacketCodec, PacketCodecError};
+use crate::proxy::{ProxyDataPacket, ProxyHelloPacket, ProxyPacket};
+
 
 pub struct Shared {
     pub clients: HashMap<SocketAddr, Tx>,
@@ -115,13 +116,9 @@ pub async fn process_socket_connection(
     tracing::info!("received new packet: {:?}", packet);
 
 
-    /*let mut connection: Client = match packet {
-         SocketPacket::HelloPacket(hello_packet) => Client::new_mc_client(state.clone(), frames, hello_packet).await?,
-         SocketPacket::HelloProxyPacket(proxy_packet) => Client::new_proxy_client(state.clone(), frames, proxy_packet).await?,
-         _ => unimplemented!()
-     };
     tracing::info!("waiting for new packets");
-    loop {
+    /*loop*/ {
+        /*
         tokio::select! {
             // A message was received from a peer. Send it to the current user.
             Some(msg) = connection.rx.recv() => {
@@ -157,10 +154,10 @@ pub async fn process_socket_connection(
                     break;
                 },
             },
-        }
+        }*/
         //frames.send("Helloaksjdlaksjdklasjdlkasjdlkasjdlsakj".to_string()).await?;
         //let peer = Peer::new(state.clone(), frames).await?;
-    }*/
+    }
     Ok(())
 }
 
@@ -170,6 +167,7 @@ pub enum ConnectionType {
     ProxyClient,
 }
 
+#[derive(Debug, Clone)]
 pub enum Protocol {
     Unknown,
     MC(u32),
@@ -185,10 +183,57 @@ pub enum SocketPacket {
 }
 
 impl SocketPacket {
-    pub fn new_minecraft_packet(packet: MinecraftPacket) -> Self {
-        SocketPacket::MinecraftPacket(packet)
+    pub fn new_first_package(packet: Vec<u8>) -> (Result<Option<SocketPacket>, PacketCodecError>, Protocol) {
+        // check if it is MC packet
+        tracing::info!("checking if its a mc pkg");
+        let hello_packet = MinecraftHelloPacket::new(packet.clone());
+        match hello_packet {
+            Ok(hello_packet) => {
+                let protocol = Protocol::MC(hello_packet.version as u32);
+                return (Ok(Some(SocketPacket::MinecraftPacket(MinecraftPacket::MCHelloPacket(hello_packet)))), protocol);
+            }
+            Err(PacketError::TooSmall) => {}
+            Err(PacketError::NotMatching) => {}
+            Err(e) => return (Err(PacketCodecError::PacketCodecError(e)), Protocol::Unknown),
+        }
+        tracing::info!("its not a mc pkg");
+        // check if it is proxy packet
+        let hello_packet = ProxyHelloPacket::new(packet);
+        match hello_packet {
+            Ok(hello_packet) => {
+                let protocol = Protocol::Proxy(hello_packet.version as u32);
+                return (Ok(Some(SocketPacket::ProxyPacket(ProxyPacket::HelloPacket(hello_packet)))), protocol);
+            }
+            Err(PacketError::TooSmall) => {}
+            Err(e) => return (Err(PacketCodecError::PacketCodecError(e)), Protocol::Unknown),
+        }
+        (Ok(None), Protocol::Unknown)
     }
-    pub fn new_proxy_packet(packet: ProxyPacket) -> Self {
-        SocketPacket::ProxyPacket(packet)
+    /// gigantic match statement to determine the packet type
+    pub fn new(packet: Vec<u8>, protocol: Protocol) -> Result<Option<SocketPacket>, PacketCodecError> {
+        match protocol {
+            Protocol::MC(_) => {
+                let packet = MinecraftDataPacket::new(packet);
+                match packet {
+                    Ok(packet) => {
+                        return Ok(Some(SocketPacket::MinecraftPacket(MinecraftPacket::MCDataPacket(packet))));
+                    }
+                    Err(PacketError::TooSmall) => {}
+                    Err(e) => return Err(PacketCodecError::PacketCodecError(e)),
+                }
+            }
+            Protocol::Proxy(_) => {
+                let packet = ProxyPacket::new(packet);
+                match packet {
+                    Ok(packet) => {
+                        return Ok(Some(SocketPacket::ProxyPacket(packet)));
+                    }
+                    Err(PacketError::TooSmall) => {}
+                    Err(e) => return Err(PacketCodecError::PacketCodecError(e)),
+                }
+            }
+            _ => { unimplemented!() }
+        }
+        return Ok(None);
     }
 }

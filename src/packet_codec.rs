@@ -1,9 +1,9 @@
-use std::{fmt, io};
+use std::{fmt, io, result};
 use bytes::{Buf, BufMut, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
 use crate::client_handler::{ConnectionType, Protocol, SocketPacket};
 use crate::datatypes::PacketError;
-use crate::proxy::{ProxyHelloPacket, ProxyPacket};
+use crate::proxy::{ProxyDataPacket, ProxyHelloPacket, ProxyPacket};
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket, MinecraftPacket};
 
 /// An error occurred while encoding or decoding a line.
@@ -18,7 +18,6 @@ pub enum PacketCodecError {
 
 pub struct PacketCodec {
     max_length: usize,
-    connection_type: ConnectionType,
     protocol: Protocol,
 }
 
@@ -35,51 +34,15 @@ impl Decoder for PacketCodec {
         if buf.len() > self.max_length {
             return Err(PacketCodecError::MaxLineLengthExceeded);
         }
-        return match self.connection_type {
+        return match self.protocol {
             // first packet
-            ConnectionType::Unknown => {
-                let hello_packet = match MinecraftPacket::new(buf.to_vec(), true) {
-                    Ok(hello_packet) => {
-                        let MinecraftPacket::MCHelloPacket(pkg) = hello_packet.into();
-                        buf.advance(pkg.length);
-                        self.protocol = Protocol::MC(pkg.version as u32);
-                        self.connection_type = ConnectionType::MCClient;
-                        Some(SocketPacket::MinecraftPacket(hello_packet))
-                    }
-                    // wait for more data
-                    Err(PacketError::TooSmall) => return Ok(None),
-                    // return error to show that parser failed
-                    Err(_) => None
-                };
-
-                if hello_packet.is_some() {
-                    return Ok(hello_packet);
-                }
-
-                match ProxyPacket::new(buf.to_vec(), true) {
-                    Ok(proxy_hello_packet) => {
-                        buf.advance(proxy_hello_packet.length);
-                        self.protocol = Protocol::Proxy(proxy_hello_packet.version as u32);
-                        self.connection_type = ConnectionType::ProxyClient;
-                        Ok(Some(SocketPacket::ProxyPacket(proxy_hello_packet)))
-                    }
-                    Err(PacketError::TooSmall) => Ok(None),
-                    Err(e) => Err(PacketCodecError::PacketCodecError(e))
-                }
+            Protocol::Unknown => {
+                let (result, protocol) = SocketPacket::new_first_package(buf.to_vec());
+                self.protocol = protocol;
+                return result;
             }
-
-            // when connection is already established
-            ConnectionType::MCClient => {
-                let data = buf.split_to(buf.len());
-
-                Ok(Some(SocketPacket::MinecraftPacket()))
-            }
-            ConnectionType::ProxyClient => {
-                if let Ok(proxy_packet) = ProxyPacket::new(buf) {
-                    buf.advance(proxy_packet.length);
-                    return Ok(Some(SocketPacket::ProxyPacket(proxy_packet)));
-                }
-                Ok(None)
+            _ => {
+                return SocketPacket::new(buf.to_vec(), self.protocol.clone());
             }
         };
     }
@@ -104,7 +67,6 @@ impl PacketCodec {
     pub fn new(max_length: usize) -> PacketCodec {
         PacketCodec {
             max_length,
-            connection_type: ConnectionType::Unknown,
             protocol: Protocol::Unknown,
         }
     }
