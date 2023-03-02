@@ -16,6 +16,7 @@ pub struct MCHelloPacket {
     pub version: i32,
     pub hostname: String,
     pub port: u32,
+    pub raw: Vec<u8>,
 }
 
 impl MCHelloPacket {
@@ -69,6 +70,7 @@ impl MCHelloPacket {
             version: version as i32,
             port,
             hostname,
+            raw: cursor.get_ref()[..cursor.position() as usize].to_vec(),
         });
     }
     fn old_connect_pkg(mut cursor: CustomCursor) -> Result<MCHelloPacket, PacketError> {
@@ -89,6 +91,7 @@ impl MCHelloPacket {
             version: version as i32,
             port,
             hostname,
+            raw: cursor.get_ref()[..cursor.position() as usize].to_vec(),
         });
     }
 
@@ -111,6 +114,7 @@ impl MCHelloPacket {
             port: port as u32,
             version,
             hostname,
+            raw: cursor.get_ref()[..cursor.position() as usize].to_vec(),
         })
     }
 }

@@ -8,7 +8,6 @@ pub type CustomCursor = Cursor<Vec<u8>>;
 pub(crate) trait CustomCursorMethods {
     fn new(buf: Vec<u8>) -> Self;
     fn get_varint(&mut self) -> Result<i32, PacketError>;
-    fn see_varint(&mut self, start: usize) -> Result<i32, PacketError>;
     fn get_utf8_string(&mut self) -> Result<String, PacketError>;
     fn throw_error_if_smaller(&mut self, size: usize) -> Result<(), PacketError>;
     fn get_utf16_string(&mut self) -> Result<String, PacketError>;
@@ -23,11 +22,6 @@ impl CustomCursorMethods for CustomCursor {
     fn get_varint(&mut self) -> Result<i32, PacketError> {
         let (value, size) = get_varint(self.get_ref(), self.position() as usize)?;
         self.set_position(self.position() + size as u64);
-        Ok(value)
-    }
-    /// just get the varint from the buffer without advancing the cursor
-    fn see_varint(&mut self, start: usize) -> Result<i32, PacketError> {
-        let (value, _) = get_varint(self.get_ref(), start)?;
         Ok(value)
     }
     /// Returns the string and the size of the string (including the size) in bytes
@@ -46,6 +40,13 @@ impl CustomCursorMethods for CustomCursor {
                 Err(PacketError::NotValidStringEncoding)
             }
         }
+    }
+    /// throws a PacketError::TooSmall if the buffer is smaller than the given size
+    fn throw_error_if_smaller(&mut self, size: usize) -> Result<(), PacketError> {
+        if self.remaining() < size {
+            return Err(PacketError::TooSmall);
+        }
+        Ok(())
     }
     /// reads length and string from the buffer
     fn get_utf16_string(&mut self) -> Result<String, PacketError> {
@@ -68,12 +69,6 @@ impl CustomCursorMethods for CustomCursor {
                 Err(PacketError::NotValidStringEncoding)
             }
         }
-    }
-    fn throw_error_if_smaller(&mut self, size: usize) -> Result<(), PacketError> {
-        if self.remaining() < size {
-            return Err(PacketError::TooSmall);
-        }
-        Ok(())
     }
     /// matches the bytes in the buffer with the given bytes and if they match advance cursor
     fn match_bytes(&mut self, bytes: &[u8]) -> bool {

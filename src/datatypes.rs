@@ -1,5 +1,17 @@
 use thiserror::Error;
 
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum PacketError {
+    #[error("Packet is too small, missing Bytes")]
+    TooSmall,
+    #[error("Packet is not valid")]
+    NotValid,
+    #[error("String encoding is not valid")]
+    NotValidStringEncoding,
+    #[error("Packet is not matching to decoder, do not recognize packet")]
+    NotMatching,
+}
+
 pub fn get_varint(buf: &[u8], start: usize) -> Result<(i32, usize), PacketError> {
     let mut value: i32 = 0;
     let mut position = 0;
@@ -23,16 +35,4 @@ pub fn get_varint(buf: &[u8], start: usize) -> Result<(i32, usize), PacketError>
             return Ok((value, size));
         }
     }
-}
-
-#[derive(Debug, Error, PartialEq, Eq)]
-pub enum PacketError {
-    #[error("Packet is too small, missing Bytes")]
-    TooSmall,
-    #[error("Packet is not valid")]
-    NotValid,
-    #[error("String encoding is not valid")]
-    NotValidStringEncoding,
-    #[error("Packet is not matching to decoder, do not recognize packet")]
-    NotMatching,
 }

@@ -7,18 +7,20 @@ use std::net::SocketAddr;
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::StreamExt;
-use tokio_util::codec::{Decoder, Framed, LinesCodec};
+use tokio_util::codec::{Decoder, Encoder, Framed, LinesCodec};
 
 use tracing;
 
-use bytes::{Buf, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
+use futures::SinkExt;
 use tokio::io::AsyncWriteExt;
 
 use crate::datatypes::PacketError;
 use crate::minecraft_versions::MCHelloPacket;
 
 pub struct Shared {
-    pub peers: HashMap<SocketAddr, Tx>,
+    pub clients: HashMap<SocketAddr, Tx>,
+    pub servers: HashMap<String, Tx>,
 }
 
 /// Shorthand for the transmit half of the message channel.
@@ -28,56 +30,74 @@ type Tx = mpsc::UnboundedSender<String>;
 type Rx = mpsc::UnboundedReceiver<String>;
 
 /// The state for each connected client.
-struct Peer {
-    /// The TCP socket wrapped with the `Lines` codec, defined below.
-    ///
-    /// This handles sending and receiving data on the socket. When using
-    /// `Lines`, we can work at the line level instead of having to manage the
-    /// raw byte operations.
-    lines: Framed<TcpStream, LinesCodec>,
-
-    /// Receive half of the message channel.
-    ///
-    /// This is used to receive messages from peers. When a message is received
-    /// off of this `Rx`, it will be written to the socket.
+struct Client {
+    packet: Framed<TcpStream, PacketCodec>,
     rx: Rx,
+    connection_type: ConnectionType,
 }
 
 impl Shared {
     /// Create a new, empty, instance of `Shared`.
     pub(crate) fn new() -> Self {
         Shared {
-            peers: HashMap::new(),
+            clients: HashMap::new(),
+            servers: HashMap::new(),
         }
     }
 
     /// Send a `LineCodec` encoded message to every peer, except
     /// for the sender.
-    async fn broadcast(&mut self, sender: SocketAddr, message: &str) {
-        for peer in self.peers.iter_mut() {
+    /*async fn broadcast(&mut self, sender: SocketAddr, message: &str) {
+        for peer in self.servers.iter_mut() {
             if *peer.0 != sender {
+                let _ = peer.1.send(message.into());
+            }
+        }
+    }*/
+    async fn send_to_server(&mut self, server: String, message: &str) {
+        for peer in self.servers.iter_mut() {
+            if *peer.0 == server {
                 let _ = peer.1.send(message.into());
             }
         }
     }
 }
 
-impl Peer {
+impl Client {
     /// Create a new instance of `Peer`.
-    async fn new(
+    async fn new_mc_client(
         state: Arc<Mutex<Shared>>,
-        lines: Framed<TcpStream, LinesCodec>,
-    ) -> io::Result<Peer> {
+        packet: Framed<TcpStream, PacketCodec>,
+        hello_packet: MCHelloPacket,
+    ) -> io::Result<Client> {
         // Get the client socket address
-        let addr = lines.get_ref().peer_addr()?;
+        let addr = packet.get_ref().peer_addr()?;
 
         // Create a channel for this peer
         let (tx, rx) = mpsc::unbounded_channel();
 
         // Add an entry for this `Peer` in the shared state map.
-        state.lock().await.peers.insert(addr, tx);
 
-        Ok(Peer { lines, rx })
+        state.lock().await.clients.insert(addr, tx);
+
+        Ok(Client { packet, rx, connection_type: ConnectionType::MCClient })
+    }
+    async fn new_proxy_client(
+        state: Arc<Mutex<Shared>>,
+        packet: Framed<TcpStream, PacketCodec>,
+        server: String,
+    ) -> io::Result<Client> {
+        // Get the client socket address
+        let addr = packet.get_ref().peer_addr()?;
+
+        // Create a channel for this peer
+        let (tx, rx) = mpsc::unbounded_channel();
+
+        // Add an entry for this `Peer` in the shared state map.
+
+        state.lock().await.servers.insert(server, tx);
+
+        Ok(Client { packet, rx, connection_type: ConnectionType::ProxyClient })
     }
 }
 
@@ -88,32 +108,52 @@ pub async fn process_socket_connection(
 ) -> Result<(), Box<dyn Error>> {
     let mut frames = Framed::new(socket, PacketCodec::new(1000));
     // In a loop, read data from the socket and write the data back.
-    loop {
-        print!(",");
-        let packet = match frames.next().await {
-            Some(packet) => packet,
-            None => {
-                println!("connection closed");
-                return Ok(());
-            }
-        };
+    let packet = frames.next().await.ok_or(PacketError::NotValid)??;
 
-        match packet {
-            Ok(packet) => match packet {
-                SocketPacket::HelloPacket(hello_packet) => {
-                    println!("Hello packet: {:?}", hello_packet);
-                    frames.get_mut().shutdown().await?;
-                }
-                _ => {
-                    println!("diff packet   ");
-                }
-            },
-            Err(e) => {
-                println!("error: {:?}", e);
-                return Ok(());
+
+    let mut connection: Client = match packet {
+        SocketPacket::HelloPacket(hello_packet) => Client::new_mc_client(state.clone(), frames, hello_packet).await?,
+        SocketPacket::HelloProxyPacket(proxy_packet) => Client::new_proxy_client(state.clone(), frames, proxy_packet).await?,
+        _ => unimplemented!()
+    };
+    loop {
+        tokio::select! {
+            // A message was received from a peer. Send it to the current user.
+            Some(msg) = connection.rx.recv() => {
+                connection.packet.send(&msg).await?;
             }
+            result = connection.packet.next() => match result {
+                // A message was received from the current user, we should
+                // broadcast this message to the other users.
+                Some(Ok(msg)) => {
+                    let mut state = state.lock().await;
+                    let msg = format!("{:?}", msg);
+
+                    match connection.connection_type {
+                        ConnectionType::MCClient => {
+                            state.send_to_server("localhost".to_string(), &msg).await;
+                        }
+                        ConnectionType::ProxyClient => {
+                            //state.broadcast(addr, &msg).await;
+                        }
+                        _ => {}
+                    }
+                }
+                // An error occurred.
+                Some(Err(e)) => {
+                    tracing::error!(
+                        "an error occurred while processing messages for error = {:?}",
+                        e
+                    );
+                }
+                // The stream has been exhausted.
+                None => break,
+            },
         }
+        //frames.send("Helloaksjdlaksjdklasjdlkasjdlkasjdlsakj".to_string()).await?;
+        //let peer = Peer::new(state.clone(), frames).await?;
     }
+    Ok(())
 }
 
 pub enum ConnectionType {
@@ -135,15 +175,7 @@ pub struct PacketCodec {
 }
 
 impl PacketCodec {
-    /// Returns a `LinesCodec` for splitting up data into lines.
-    ///
-    /// # Note
-    ///
-    /// The returned `LinesCodec` will not have an upper bound on the length
-    /// of a buffered line. See the documentation for [`new_with_max_length`]
-    /// for information on why this could be a potential security risk.
-    ///
-    /// [`new_with_max_length`]: crate::codec::LinesCodec::new_with_max_length()
+    /// Returns a `PacketCodec` for splitting up data into packets.
     pub fn new(max_length: usize) -> PacketCodec {
         PacketCodec {
             max_length,
@@ -183,6 +215,7 @@ impl From<io::Error> for PacketCodecError {
 
 impl std::error::Error for PacketCodecError {}
 
+#[derive(Debug)]
 pub struct MCDataPacket {
     pub length: usize,
     pub data: Vec<u8>,
@@ -190,6 +223,7 @@ pub struct MCDataPacket {
 
 
 // todo
+#[derive(Debug)]
 pub struct ProxyPacket {
     pub length: usize,
     pub data: Vec<u8>,
@@ -203,9 +237,11 @@ impl ProxyPacket {
     }
 }
 
+#[derive(Debug)]
 pub enum SocketPacket {
     HelloPacket(MCHelloPacket),
     MCData(BytesMut),
+    HelloProxyPacket(String),
     ProxyPacket(ProxyPacket),
     UnknownPacket,
 }
@@ -215,7 +251,6 @@ impl Decoder for PacketCodec {
     type Error = PacketCodecError;
 
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<SocketPacket>, PacketCodecError> {
-        print!(".");
         // otherwise decode gets called very often!
         if buf.len() < 1 {
             return Ok(None);
@@ -224,6 +259,7 @@ impl Decoder for PacketCodec {
             return Err(PacketCodecError::MaxLineLengthExceeded);
         }
         return match self.connection_type {
+            // first packet
             ConnectionType::Unknown => {
                 let hello_packet = MCHelloPacket::new(buf.to_vec());
                 match hello_packet {
@@ -235,9 +271,19 @@ impl Decoder for PacketCodec {
                     }
                     Err(e) => match e {
                         PacketError::TooSmall => Ok(None),
-                        _ => Err(PacketCodecError::PacketError(e)),
+                        _ => {
+                            //Err(PacketCodecError::PacketError(e))
+                            self.protocol = Protocol::Proxy(1);
+                            self.connection_type = ConnectionType::ProxyClient;
+                            Ok(Some(SocketPacket::HelloProxyPacket("localhost".to_string())))
+                        }
                     },
                 }
+            }
+            // when connection is already established
+            ConnectionType::MCClient => {
+                let data = buf.split_to(buf.len());
+                Ok(Some(SocketPacket::MCData(data)))
             }
             ConnectionType::ProxyClient => {
                 if let Some(proxy_packet) = ProxyPacket::new(buf) {
@@ -246,10 +292,20 @@ impl Decoder for PacketCodec {
                 }
                 Ok(None)
             }
-            ConnectionType::MCClient => {
-                let data = buf.split_to(buf.len());
-                Ok(Some(SocketPacket::MCData(data)))
-            }
         };
+    }
+}
+
+impl<T> Encoder<T> for PacketCodec
+    where
+        T: AsRef<str>,
+{
+    type Error = PacketCodecError;
+
+    fn encode(&mut self, packet: T, buf: &mut BytesMut) -> Result<(), PacketCodecError> {
+        let packet = packet.as_ref();
+        buf.reserve(packet.len());
+        buf.put(packet.as_bytes());
+        Ok(())
     }
 }
