@@ -26,37 +26,11 @@ impl From<ProxyPacket> for SocketPacket {
     }
 }
 
-macro_rules! packet_match {
-    ($socket_type:ident, $packet_type:ident, $variant:ident, $protocol_type:ident, $buffer:expr) => {{
-        let hello_packet = $packet_type::new($buffer.inn);
-        match hello_packet {
-            Ok(hello_packet) => {
-                let protocol = Protocol::$protocol_type(hello_packet.version as u32);
-                return (
-                    Ok(Some(SocketPacket::from($socket_type::$variant(
-                        hello_packet,
-                    )))),
-                    protocol,
-                );
-            }
-            Err(PacketError::TooSmall) => {}
-            Err(PacketError::NotMatching) => {}
-            Err(e) => {
-                return (
-                    Err(PacketCodecError::PacketCodecError(e)),
-                    Protocol::Unknown,
-                )
-            }
-        }
-    }};
-}
 impl SocketPacket {
     pub fn new_first_package(
         packet: &mut BytesMut,
     ) -> (Result<Option<SocketPacket>, PacketCodecError>, Protocol) {
         // check if it is MC packet
-        tracing::info!("checking if its a mc pkg");
-
         let hello_packet = MinecraftHelloPacket::new(packet);
         match hello_packet {
             Ok(hello_packet) => {
@@ -72,8 +46,7 @@ impl SocketPacket {
             Err(PacketError::NotMatching) => {}
             Err(e) => return (Err(PacketCodecError::from(e)), Protocol::Unknown),
         }
-        tracing::info!("its not a mc pkg");
-        //packet_match!(ProxyPacket, ProxyHelloPacket, HelloPacket, Proxy, packet);
+        // check if it is Proxy packet
         let hello_packet = ProxyHelloPacket::new(packet);
         match hello_packet {
             Ok(hello_packet) => {
