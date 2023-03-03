@@ -1,4 +1,5 @@
 use std::io::BufRead;
+use bytes::BytesMut;
 use crate::cursor::{CustomCursor, CustomCursorMethods};
 use crate::datatypes::PacketError;
 
@@ -42,19 +43,18 @@ impl ProxyDataPacket {
 }
 
 impl ProxyPacket {
-    pub fn new(buf: Vec<u8>) -> Result<ProxyPacket, PacketError> {
-        unimplemented!();
-        /*Ok(ProxyPacket::HelloPacket(ProxyHelloPacket {
-            length,
-            version: 123123,
-            hostname: line.unwrap(),
-        }))*/
+    pub fn new(buf: &mut BytesMut) -> Result<ProxyPacket, PacketError> {
+        Ok(ProxyPacket::DataPacket(ProxyDataPacket {
+            length: 1234,
+            client_id: 0,
+            data: buf.to_vec(),
+        }))
     }
 }
 
 impl ProxyHelloPacket {
-    pub fn new(buf: Vec<u8>) -> Result<ProxyHelloPacket, PacketError> {
-        let cursor = CustomCursor::new(buf.clone());
+    pub fn new(buf: &mut BytesMut) -> Result<ProxyHelloPacket, PacketError> {
+        let cursor = CustomCursor::new(buf.to_vec());
         let length = buf.len();
         if length < 1 {
             return Err(PacketError::TooSmall);

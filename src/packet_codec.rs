@@ -17,6 +17,12 @@ pub enum PacketCodecError {
     Io(io::Error),
 }
 
+impl From<PacketError> for PacketCodecError {
+    fn from(err: PacketError) -> PacketCodecError {
+        PacketCodecError::PacketCodecError(err)
+    }
+}
+
 pub struct PacketCodec {
     max_length: usize,
     protocol: Protocol,
@@ -38,12 +44,12 @@ impl Decoder for PacketCodec {
         return match self.protocol {
             // first packet
             Protocol::Unknown => {
-                let (result, protocol) = SocketPacket::new_first_package(buf.to_vec());
+                let (result, protocol) = SocketPacket::new_first_package(buf);
                 self.protocol = protocol;
-                return result;
+                result
             }
             _ => {
-                return SocketPacket::new(buf.to_vec(), self.protocol.clone());
+                SocketPacket::new(buf, self.protocol.clone())
             }
         };
     }

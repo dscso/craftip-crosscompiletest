@@ -19,6 +19,7 @@ use crate::datatypes::PacketError;
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket, MinecraftPacket};
 use crate::packet_codec::{PacketCodec, PacketCodecError};
 use crate::proxy::{ProxyDataPacket, ProxyHelloPacket, ProxyPacket};
+use crate::socket_packet::SocketPacket;
 
 
 pub struct Shared {
@@ -112,34 +113,26 @@ pub async fn process_socket_connection(
     tracing::info!("new connection from: {}", addr);
     let mut frames = Framed::new(socket, PacketCodec::new(1000));
     // In a loop, read data from the socket and write the data back.
-    let packet = frames.next().await.ok_or(PacketError::NotValid)??;
+    let packet = frames.next().await.expect("Did not get packet back")?;
     tracing::info!("received new packet: {:?}", packet);
 
 
     tracing::info!("waiting for new packets");
-    /*loop*/ {
-        /*
+    loop {
         tokio::select! {
             // A message was received from a peer. Send it to the current user.
-            Some(msg) = connection.rx.recv() => {
+            /*Some(msg) = connection.rx.recv() => {
                 connection.packet.send(&msg).await?;
-            }
-            result = connection.packet.next() => match result {
+            }*/
+            result = frames.next() => match result {
                 // A message was received from the current user, we should
                 // broadcast this message to the other users.
                 Some(Ok(msg)) => {
-                    let mut state = state.lock().await;
-                    let msg = format!("{:?}", msg);
-
-                    match connection.connection_type {
-                        ConnectionType::MCClient => {
-                            state.send_to_server("localhost".to_string(), &msg).await;
-                        }
-                        ConnectionType::ProxyClient => {
-                            //state.broadcast(addr, &msg).await;
-                        }
-                        _ => {}
+                    let mut asd :u128 = 1;
+                    for i in 0..100000 {
+                        asd = asd.saturating_add(i);
                     }
+                    println!("Received message: {:?}", msg);
                 }
                 // An error occurred.
                 Some(Err(e)) => {
@@ -154,7 +147,7 @@ pub async fn process_socket_connection(
                     break;
                 },
             },
-        }*/
+        }
         //frames.send("Helloaksjdlaksjdklasjdlkasjdlkasjdlsakj".to_string()).await?;
         //let peer = Peer::new(state.clone(), frames).await?;
     }

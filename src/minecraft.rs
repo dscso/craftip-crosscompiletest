@@ -1,4 +1,4 @@
-use bytes::Buf;
+use bytes::{Buf, BytesMut};
 use std::mem::size_of;
 
 use crate::cursor::{CustomCursor, CustomCursorMethods};
@@ -15,8 +15,20 @@ pub enum MinecraftPacket {
     MCDataPacket(MinecraftDataPacket),
 }
 
+impl From<MinecraftHelloPacket> for MinecraftPacket {
+    fn from(packet: MinecraftHelloPacket) -> Self {
+        MinecraftPacket::MCHelloPacket(packet)
+    }
+}
+
+impl From<MinecraftDataPacket> for MinecraftPacket {
+    fn from(packet: MinecraftDataPacket) -> Self {
+        MinecraftPacket::MCDataPacket(packet)
+    }
+}
+
 impl MinecraftPacket {
-    pub fn new(buf: Vec<u8>, first_pkg: bool) -> Result<MinecraftPacket, PacketError> {
+    pub fn new(buf: &mut BytesMut, first_pkg: bool) -> Result<MinecraftPacket, PacketError> {
         if first_pkg {
             MinecraftHelloPacket::new(buf)
                 .map(MinecraftPacket::MCHelloPacket)
@@ -44,39 +56,46 @@ pub struct MinecraftDataPacket {
 }
 
 impl MinecraftDataPacket {
-    pub fn new(buf: Vec<u8>) -> Result<MinecraftDataPacket, PacketError> {
+    pub fn new(buf: &mut BytesMut) -> Result<MinecraftDataPacket, PacketError> {
         let length = buf.len();
         if length < 1 {
             return Err(PacketError::NotValid);
         }
-        Ok(MinecraftDataPacket { length, data: buf })
+        let data = buf.to_vec();
+        buf.advance(length);
+        Ok(MinecraftDataPacket { length, data })
     }
 }
 
 impl MinecraftHelloPacket {
-    pub fn new(buf: Vec<u8>) -> Result<MinecraftHelloPacket, PacketError> {
-        let mut cursor = CustomCursor::new(buf);
-
-        match MinecraftHelloPacket::old_ping_pkg(cursor.clone()) {
+    pub fn new(buf: &mut BytesMut) -> Result<MinecraftHelloPacket, PacketError> {
+        match MinecraftHelloPacket::old_ping_pkg(buf) {
             Ok(pkg) => return Ok(pkg),
             Err(PacketError::NotMatching) => {}
-            Err(e) => return Err(e),
+            result => {
+                return result;
+            }
         }
-        match MinecraftHelloPacket::old_connect_pkg(cursor.clone()) {
+        match MinecraftHelloPacket::old_connect_pkg(buf) {
             Ok(pkg) => return Ok(pkg),
             Err(PacketError::NotMatching) => {}
-            Err(e) => return Err(e),
+            result => {
+                return result;
+            }
         }
-        match MinecraftHelloPacket::new_pkg(cursor.clone()) {
+        match MinecraftHelloPacket::new_pkg(buf) {
             Ok(pkg) => return Ok(pkg),
             Err(PacketError::NotMatching) => {}
-            Err(e) => return Err(e),
+            result => {
+                return result;
+            }
         }
 
         Err(PacketError::NotMatching)
     }
 
-    fn old_ping_pkg(mut cursor: CustomCursor) -> Result<MinecraftHelloPacket, PacketError> {
+    fn old_ping_pkg(buf: &mut BytesMut) -> Result<MinecraftHelloPacket, PacketError> {
+        let mut cursor = CustomCursor::new(buf.to_vec());
         if !cursor.match_bytes(&[0xFE, 0x01]) {
             return Err(PacketError::NotMatching);
         }
@@ -98,6 +117,7 @@ impl MinecraftHelloPacket {
         cursor.throw_error_if_smaller(size_of::<u32>())?;
         let port = cursor.get_u32();
 
+        buf.advance(cursor.position() as usize);
         return Ok(MinecraftHelloPacket {
             length: cursor.position() as usize,
             id: 0,
@@ -107,7 +127,8 @@ impl MinecraftHelloPacket {
             raw: cursor.get_ref()[..cursor.position() as usize].to_vec(),
         });
     }
-    fn old_connect_pkg(mut cursor: CustomCursor) -> Result<MinecraftHelloPacket, PacketError> {
+    fn old_connect_pkg(buf: &mut BytesMut) -> Result<MinecraftHelloPacket, PacketError> {
+        let mut cursor = CustomCursor::new(buf.to_vec());
         if !cursor.match_bytes(&[0x02]) {
             return Err(PacketError::NotMatching);
         }
@@ -119,6 +140,7 @@ impl MinecraftHelloPacket {
         cursor.throw_error_if_smaller(size_of::<u32>())?;
         let port = cursor.get_u32();
 
+        buf.advance(cursor.position() as usize);
         return Ok(MinecraftHelloPacket {
             length: cursor.position() as usize,
             id: 0,
@@ -129,7 +151,8 @@ impl MinecraftHelloPacket {
         });
     }
 
-    fn new_pkg(mut cursor: CustomCursor) -> Result<MinecraftHelloPacket, PacketError> {
+    fn new_pkg(buf: &mut BytesMut) -> Result<MinecraftHelloPacket, PacketError> {
+        let mut cursor = CustomCursor::new(buf.to_vec());
         let pkg_length = cursor.get_varint()?;
         let pkg_id = cursor.get_varint()?;
         if pkg_id != 0 {
@@ -142,6 +165,7 @@ impl MinecraftHelloPacket {
         if cursor.position() as usize != pkg_length as usize {
             return Err(PacketError::NotValid);
         }
+        buf.advance(cursor.position() as usize);
         Ok(MinecraftHelloPacket {
             length: cursor.position() as usize,
             id: pkg_id,
