@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::error::Error;
-use std::sync::Arc;
 use std::io;
+use std::sync::Arc;
 
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
@@ -11,16 +11,8 @@ use tokio_util::codec::Framed;
 
 use tracing;
 
-use bytes::{Buf, BufMut, BytesMut};
-use futures::SinkExt;
-use tokio::io::AsyncWriteExt;
-use crate::datatypes::PacketError;
-
-use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket, MinecraftPacket};
-use crate::packet_codec::{PacketCodec, PacketCodecError};
-use crate::proxy::{ProxyDataPacket, ProxyHelloPacket, ProxyPacket};
-use crate::socket_packet::SocketPacket;
-
+use crate::minecraft::MinecraftHelloPacket;
+use crate::packet_codec::PacketCodec;
 
 pub struct Shared {
     pub clients: HashMap<SocketAddr, Tx>,
@@ -84,7 +76,11 @@ impl Client {
 
         state.lock().await.clients.insert(addr, tx);
 
-        Ok(Client { packet, rx, connection_type: ConnectionType::MCClient })
+        Ok(Client {
+            packet,
+            rx,
+            connection_type: ConnectionType::MCClient,
+        })
     }
     async fn new_proxy_client(
         state: Arc<Mutex<Shared>>,
@@ -101,7 +97,11 @@ impl Client {
 
         state.lock().await.servers.insert(server, tx);
 
-        Ok(Client { packet, rx, connection_type: ConnectionType::ProxyClient })
+        Ok(Client {
+            packet,
+            rx,
+            connection_type: ConnectionType::ProxyClient,
+        })
     }
 }
 
@@ -115,7 +115,6 @@ pub async fn process_socket_connection(
     // In a loop, read data from the socket and write the data back.
     let packet = frames.next().await.expect("Did not get packet back")?;
     tracing::info!("received new packet: {:?}", packet);
-
 
     tracing::info!("waiting for new packets");
     loop {

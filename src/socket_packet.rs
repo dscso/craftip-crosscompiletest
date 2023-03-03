@@ -1,10 +1,10 @@
-use bytes::BytesMut;
-use tracing;
 use crate::client_handler::Protocol;
 use crate::datatypes::PacketError;
+use bytes::BytesMut;
+use tracing;
 
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket, MinecraftPacket};
-use crate::packet_codec::{PacketCodecError};
+use crate::packet_codec::PacketCodecError;
 use crate::proxy::{ProxyHelloPacket, ProxyPacket};
 
 #[derive(Debug)]
@@ -26,25 +26,34 @@ impl From<ProxyPacket> for SocketPacket {
     }
 }
 
-
 macro_rules! packet_match {
-    ($socket_type:ident, $packet_type:ident, $variant:ident, $protocol_type:ident, $buffer:expr) => {
-        {
+    ($socket_type:ident, $packet_type:ident, $variant:ident, $protocol_type:ident, $buffer:expr) => {{
         let hello_packet = $packet_type::new($buffer.inn);
         match hello_packet {
             Ok(hello_packet) => {
                 let protocol = Protocol::$protocol_type(hello_packet.version as u32);
-                return (Ok(Some(SocketPacket::from($socket_type::$variant(hello_packet)))), protocol);
+                return (
+                    Ok(Some(SocketPacket::from($socket_type::$variant(
+                        hello_packet,
+                    )))),
+                    protocol,
+                );
             }
             Err(PacketError::TooSmall) => {}
             Err(PacketError::NotMatching) => {}
-            Err(e) => return (Err(PacketCodecError::PacketCodecError(e)), Protocol::Unknown),
+            Err(e) => {
+                return (
+                    Err(PacketCodecError::PacketCodecError(e)),
+                    Protocol::Unknown,
+                )
+            }
         }
-        }
-    };
+    }};
 }
 impl SocketPacket {
-    pub fn new_first_package(packet: &mut BytesMut) -> (Result<Option<SocketPacket>, PacketCodecError>, Protocol) {
+    pub fn new_first_package(
+        packet: &mut BytesMut,
+    ) -> (Result<Option<SocketPacket>, PacketCodecError>, Protocol) {
         // check if it is MC packet
         tracing::info!("checking if its a mc pkg");
 
@@ -52,7 +61,12 @@ impl SocketPacket {
         match hello_packet {
             Ok(hello_packet) => {
                 let protocol = Protocol::MC(hello_packet.version as u32);
-                return (Ok(Some(SocketPacket::from(MinecraftPacket::MCHelloPacket(hello_packet)))), protocol);
+                return (
+                    Ok(Some(SocketPacket::from(MinecraftPacket::MCHelloPacket(
+                        hello_packet,
+                    )))),
+                    protocol,
+                );
             }
             Err(PacketError::TooSmall) => {}
             Err(PacketError::NotMatching) => {}
@@ -64,7 +78,12 @@ impl SocketPacket {
         match hello_packet {
             Ok(hello_packet) => {
                 let protocol = Protocol::Proxy(hello_packet.version as u32);
-                return (Ok(Some(SocketPacket::from(ProxyPacket::HelloPacket(hello_packet)))), protocol);
+                return (
+                    Ok(Some(SocketPacket::from(ProxyPacket::HelloPacket(
+                        hello_packet,
+                    )))),
+                    protocol,
+                );
             }
             Err(PacketError::TooSmall) => {}
             Err(PacketError::NotMatching) => {}
@@ -73,7 +92,10 @@ impl SocketPacket {
         (Ok(None), Protocol::Unknown)
     }
     /// gigantic match statement to determine the packet type
-    pub fn new(buf: &mut BytesMut, protocol: Protocol) -> Result<Option<SocketPacket>, PacketCodecError> {
+    pub fn new(
+        buf: &mut BytesMut,
+        protocol: Protocol,
+    ) -> Result<Option<SocketPacket>, PacketCodecError> {
         println!("new packet: {:?}", protocol);
         match protocol {
             Protocol::MC(_) => {
@@ -97,7 +119,9 @@ impl SocketPacket {
                     Err(e) => return Err(PacketCodecError::from(e)),
                 }
             }
-            _ => { unimplemented!() }
+            _ => {
+                unimplemented!()
+            }
         }
         return Ok(None);
     }

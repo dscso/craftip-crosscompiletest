@@ -2,10 +2,10 @@ mod client_handler;
 mod cursor;
 mod datatypes;
 mod minecraft;
-mod test;
-mod proxy;
 mod packet_codec;
+mod proxy;
 mod socket_packet;
+mod test;
 
 use tokio::net::TcpListener;
 
@@ -16,8 +16,6 @@ use tokio::sync::Mutex;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    use tracing_subscriber::{fmt::format::FmtSpan, EnvFilter};
-
     let subscriber = tracing_subscriber::fmt()
         .compact()
         .with_file(true)

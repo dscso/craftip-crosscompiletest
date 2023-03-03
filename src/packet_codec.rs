@@ -1,11 +1,9 @@
-use std::{fmt, io, result};
-use bytes::{Buf, BufMut, BytesMut};
-use tokio_util::codec::{Decoder, Encoder};
-use crate::client_handler::{ConnectionType, Protocol};
+use crate::client_handler::Protocol;
 use crate::datatypes::PacketError;
-use crate::proxy::{ProxyDataPacket, ProxyHelloPacket, ProxyPacket};
-use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket, MinecraftPacket};
 use crate::socket_packet::SocketPacket;
+use bytes::{BufMut, BytesMut};
+use std::{fmt, io};
+use tokio_util::codec::{Decoder, Encoder};
 
 /// An error occurred while encoding or decoding a line.
 #[derive(Debug)]
@@ -28,7 +26,6 @@ pub struct PacketCodec {
     protocol: Protocol,
 }
 
-
 impl Decoder for PacketCodec {
     type Item = SocketPacket;
     type Error = PacketCodecError;
@@ -48,16 +45,14 @@ impl Decoder for PacketCodec {
                 self.protocol = protocol;
                 result
             }
-            _ => {
-                SocketPacket::new(buf, self.protocol.clone())
-            }
+            _ => SocketPacket::new(buf, self.protocol.clone()),
         };
     }
 }
 
 impl<T> Encoder<T> for PacketCodec
-    where
-        T: AsRef<str>,
+where
+    T: AsRef<str>,
 {
     type Error = PacketCodecError;
 

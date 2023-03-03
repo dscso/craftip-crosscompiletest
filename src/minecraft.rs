@@ -30,11 +30,9 @@ impl From<MinecraftDataPacket> for MinecraftPacket {
 impl MinecraftPacket {
     pub fn new(buf: &mut BytesMut, first_pkg: bool) -> Result<MinecraftPacket, PacketError> {
         if first_pkg {
-            MinecraftHelloPacket::new(buf)
-                .map(MinecraftPacket::MCHelloPacket)
+            MinecraftHelloPacket::new(buf).map(MinecraftPacket::MCHelloPacket)
         } else {
-            MinecraftDataPacket::new(buf)
-                .map(MinecraftPacket::MCDataPacket)
+            MinecraftDataPacket::new(buf).map(MinecraftPacket::MCDataPacket)
         }
     }
 }

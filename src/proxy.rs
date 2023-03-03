@@ -1,7 +1,7 @@
-use std::io::BufRead;
-use bytes::BytesMut;
-use crate::cursor::{CustomCursor, CustomCursorMethods};
+use crate::cursor::CustomCursor;
 use crate::datatypes::PacketError;
+use bytes::BytesMut;
+use std::io::BufRead;
 
 #[derive(Debug)]
 pub enum ProxyPacket {
