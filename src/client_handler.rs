@@ -127,10 +127,6 @@ pub async fn process_socket_connection(
                 // A message was received from the current user, we should
                 // broadcast this message to the other users.
                 Some(Ok(msg)) => {
-                    let mut asd :u128 = 1;
-                    for i in 0..100000 {
-                        asd = asd.saturating_add(i);
-                    }
                     println!("Received message: {:?}", msg);
                 }
                 // An error occurred.

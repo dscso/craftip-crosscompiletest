@@ -1,9 +1,10 @@
-use crate::cursor::CustomCursor;
+use crate::cursor::{CustomCursor, CustomCursorMethods};
 use crate::datatypes::PacketError;
-use bytes::BytesMut;
+use bytes::{Buf, BytesMut};
+use serde::{Deserialize, Serialize};
 use std::io::BufRead;
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub enum ProxyPacket {
     HelloPacket(ProxyHelloPacket),
     ClientJoinPacket(ProxyClientJoinPacket),
@@ -12,61 +13,40 @@ pub enum ProxyPacket {
 }
 
 /// ProxyHelloPacket is the first packet sent by the client to the proxy.
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct ProxyHelloPacket {
     pub length: usize,
     pub version: i32,
     pub hostname: String,
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct ProxyClientJoinPacket {
     pub length: usize,
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct ProxyDataPacket {
     pub length: usize,
     pub client_id: u32,
     pub data: Vec<u8>,
 }
 
-impl ProxyDataPacket {
-    pub(crate) fn new(buf: Vec<u8>) -> Result<ProxyDataPacket, PacketError> {
-        tracing::info!("ProxyDataPacket new");
-        Ok(ProxyDataPacket {
-            length: 0,
-            client_id: 0,
-            data: buf,
-        })
-    }
-}
-
 impl ProxyPacket {
-    pub fn new(buf: &mut BytesMut) -> Result<ProxyPacket, PacketError> {
-        Ok(ProxyPacket::DataPacket(ProxyDataPacket {
-            length: 1234,
-            client_id: 0,
-            data: buf.to_vec(),
-        }))
+    pub fn decode(buf: &mut BytesMut) -> Result<ProxyPacket, PacketError> {
+        let mut cursor = CustomCursor::new(buf.to_vec());
+        // create new empty string
+        let mut line = String::new();
+        // read a line into the string if there is one advance buffer if not return error
+        if cursor.read_line(&mut line).is_err() {
+            return Err(PacketError::TooSmall);
+        }
+        buf.advance(cursor.position() as usize);
+        let packet: ProxyPacket = serde_json::from_str(&line).map_err(|_| PacketError::NotValid)?;
+        Ok(packet)
     }
-}
-
-impl ProxyHelloPacket {
-    pub fn new(buf: &mut BytesMut) -> Result<ProxyHelloPacket, PacketError> {
-        let cursor = CustomCursor::new(buf.to_vec());
-        let length = buf.len();
-        if length < 1 {
-            return Err(PacketError::TooSmall);
-        }
-        let line = cursor.lines().map(|l| l.unwrap()).next();
-        if line.is_none() {
-            return Err(PacketError::TooSmall);
-        }
-        Ok(ProxyHelloPacket {
-            length,
-            version: 123123,
-            hostname: line.unwrap(),
-        })
+    pub fn encode(&self) -> Result<Vec<u8>, PacketError> {
+        let packet = serde_json::to_string(self).map_err(|_| PacketError::NotValid)?;
+        Ok(packet.as_bytes().to_vec())
     }
 }

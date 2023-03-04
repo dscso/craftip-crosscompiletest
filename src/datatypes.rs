@@ -8,6 +8,8 @@ pub enum PacketError {
     NotValid,
     #[error("String encoding is not valid")]
     NotValidStringEncoding,
+    #[error("Not a valid first packet")]
+    NotValidFirstPacket,
     #[error("Packet is not matching to decoder, do not recognize packet")]
     NotMatching,
 }

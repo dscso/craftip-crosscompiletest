@@ -27,7 +27,7 @@ impl From<ProxyPacket> for SocketPacket {
 }
 
 impl SocketPacket {
-    pub fn new_first_package(
+    pub fn parse_first_package(
         packet: &mut BytesMut,
     ) -> (Result<Option<SocketPacket>, PacketCodecError>, Protocol) {
         // check if it is MC packet
@@ -47,15 +47,21 @@ impl SocketPacket {
             Err(e) => return (Err(PacketCodecError::from(e)), Protocol::Unknown),
         }
         // check if it is Proxy packet
-        let hello_packet = ProxyHelloPacket::new(packet);
+        let hello_packet = ProxyPacket::decode(packet);
         match hello_packet {
-            Ok(hello_packet) => {
+            Ok(ProxyPacket::HelloPacket(hello_packet)) => {
                 let protocol = Protocol::Proxy(hello_packet.version as u32);
                 return (
                     Ok(Some(SocketPacket::from(ProxyPacket::HelloPacket(
                         hello_packet,
                     )))),
                     protocol,
+                );
+            }
+            Ok(_) => {
+                return (
+                    Err(PacketCodecError::from(PacketError::NotValidFirstPacket)),
+                    Protocol::Unknown,
                 );
             }
             Err(PacketError::TooSmall) => {}
@@ -65,11 +71,10 @@ impl SocketPacket {
         (Ok(None), Protocol::Unknown)
     }
     /// gigantic match statement to determine the packet type
-    pub fn new(
+    pub fn parse_packet(
         buf: &mut BytesMut,
         protocol: Protocol,
     ) -> Result<Option<SocketPacket>, PacketCodecError> {
-        println!("new packet: {:?}", protocol);
         match protocol {
             Protocol::MC(_) => {
                 let packet = MinecraftDataPacket::new(buf);
@@ -82,8 +87,7 @@ impl SocketPacket {
                 }
             }
             Protocol::Proxy(_) => {
-                println!("proxy packet");
-                let packet = ProxyPacket::new(buf);
+                let packet = ProxyPacket::decode(buf);
                 match packet {
                     Ok(packet) => {
                         return Ok(Some(SocketPacket::from(packet)));
