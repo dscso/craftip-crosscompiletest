@@ -9,7 +9,7 @@ const OLD_MINECRAFT_START: [u8; 27] = [
     0x6E, 0x00, 0x67, 0x00, 0x48, 0x00, 0x6F, 0x00, 0x73, 0x00, 0x74,
 ];
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum MinecraftPacket {
     MCHelloPacket(MinecraftHelloPacket),
     MCDataPacket(MinecraftDataPacket),
@@ -37,7 +37,7 @@ impl MinecraftPacket {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub struct MinecraftHelloPacket {
     pub length: usize,
     pub id: i32,
@@ -47,7 +47,7 @@ pub struct MinecraftHelloPacket {
     pub raw: Vec<u8>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MinecraftDataPacket {
     pub length: usize,
     pub data: Vec<u8>,

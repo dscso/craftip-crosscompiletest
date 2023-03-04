@@ -71,8 +71,8 @@ impl Decoder for PacketCodec {
 }
 
 impl<T> Encoder<T> for PacketCodec
-where
-    T: AsRef<str>,
+    where
+        T: AsRef<str>,
 {
     type Error = PacketCodecError;
 

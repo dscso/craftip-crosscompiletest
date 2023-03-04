@@ -4,6 +4,8 @@ use std::io;
 use std::sync::Arc;
 
 use std::net::SocketAddr;
+use bytes::BytesMut;
+use futures::SinkExt;
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::StreamExt;
@@ -11,8 +13,10 @@ use tokio_util::codec::Framed;
 
 use tracing;
 
-use crate::minecraft::MinecraftHelloPacket;
+use crate::minecraft::{MinecraftHelloPacket, MinecraftPacket};
 use crate::packet_codec::PacketCodec;
+use crate::proxy::ProxyPacket;
+use crate::socket_packet::SocketPacket;
 
 pub struct Shared {
     pub clients: HashMap<SocketAddr, Tx>,
@@ -20,14 +24,14 @@ pub struct Shared {
 }
 
 /// Shorthand for the transmit half of the message channel.
-type Tx = mpsc::UnboundedSender<String>;
+type Tx = mpsc::UnboundedSender<BytesMut>;
 
 /// Shorthand for the receive half of the message channel.
-type Rx = mpsc::UnboundedReceiver<String>;
+type Rx = mpsc::UnboundedReceiver<BytesMut>;
 
 /// The state for each connected client.
 struct Client {
-    packet: Framed<TcpStream, PacketCodec>,
+    frames: Framed<TcpStream, PacketCodec>,
     rx: Rx,
     connection_type: ConnectionType,
 }
@@ -50,11 +54,12 @@ impl Shared {
             }
         }
     }*/
-    async fn send_to_server(&mut self, server: String, message: &str) {
+    async fn send_to_server(&mut self, server: String, buf: &BytesMut) {
         for peer in self.servers.iter_mut() {
-            if *peer.0 == server {
-                let _ = peer.1.send(message.into());
-            }
+            println!("{} == {}", peer.0, server);
+            //if *peer.0 == server {
+            let _ = peer.1.send(buf.clone());
+            //}
         }
     }
 }
@@ -63,11 +68,11 @@ impl Client {
     /// Create a new instance of `Peer`.
     async fn new_mc_client(
         state: Arc<Mutex<Shared>>,
-        packet: Framed<TcpStream, PacketCodec>,
+        frames: Framed<TcpStream, PacketCodec>,
         hello_packet: MinecraftHelloPacket,
     ) -> io::Result<Client> {
         // Get the client socket address
-        let addr = packet.get_ref().peer_addr()?;
+        let addr = frames.get_ref().peer_addr()?;
 
         // Create a channel for this peer
         let (tx, rx) = mpsc::unbounded_channel();
@@ -77,18 +82,18 @@ impl Client {
         state.lock().await.clients.insert(addr, tx);
 
         Ok(Client {
-            packet,
+            frames,
             rx,
             connection_type: ConnectionType::MCClient,
         })
     }
     async fn new_proxy_client(
         state: Arc<Mutex<Shared>>,
-        packet: Framed<TcpStream, PacketCodec>,
+        frames: Framed<TcpStream, PacketCodec>,
         server: String,
     ) -> io::Result<Client> {
         // Get the client socket address
-        let addr = packet.get_ref().peer_addr()?;
+        let addr = frames.get_ref().peer_addr()?;
 
         // Create a channel for this peer
         let (tx, rx) = mpsc::unbounded_channel();
@@ -98,7 +103,7 @@ impl Client {
         state.lock().await.servers.insert(server, tx);
 
         Ok(Client {
-            packet,
+            frames,
             rx,
             connection_type: ConnectionType::ProxyClient,
         })
@@ -115,19 +120,48 @@ pub async fn process_socket_connection(
     // In a loop, read data from the socket and write the data back.
     let packet = frames.next().await.expect("Did not get packet back")?;
     tracing::info!("received new packet: {:?}", packet);
-
+    let mut connection = match packet {
+        SocketPacket::MinecraftPacket(MinecraftPacket::MCHelloPacket(hello_pkg)) => {
+            Client::new_mc_client(state.clone(), frames, hello_pkg.clone()).await?
+        }
+        SocketPacket::ProxyPacket(ProxyPacket::HelloPacket(hello_pkg)) => {
+            Client::new_proxy_client(state.clone(), frames, hello_pkg.clone().hostname).await?
+        }
+        _ => {
+            tracing::error!("Unknown protocol");
+            return Ok(());
+        }
+    };
+    //let mut connection = state.lock().await.servers.get("localhost").unwrap().clone();
     tracing::info!("waiting for new packets");
     loop {
         tokio::select! {
             // A message was received from a peer. Send it to the current user.
-            /*Some(msg) = connection.rx.recv() => {
-                connection.packet.send(&msg).await?;
-            }*/
-            result = frames.next() => match result {
+            Some(pkg) = connection.rx.recv() => {
+                tracing::info!("Sending packet to client: {:?}", pkg);
+                let string = format!("{:?}", pkg);
+                connection.frames.send(string).await?;
+            }
+            result = connection.frames.next() => match result {
                 // A message was received from the current user, we should
                 // broadcast this message to the other users.
                 Some(Ok(msg)) => {
-                    println!("Received message: {:?}", msg);
+                    tracing::info!("Received message: {:?}", msg);
+                    match msg {
+                        SocketPacket::MinecraftPacket(MinecraftPacket::MCDataPacket(packet)) => {
+                            tracing::info!("Received minecraft packet: {:?}", packet);
+                            {
+                                let pkg = BytesMut::from(&packet.data.clone()[..]);
+                                state.lock().await.send_to_server("localhost".to_string(), &pkg).await;
+                            }
+                        }
+                        SocketPacket::ProxyPacket(packet) => {
+                            tracing::info!("Received proxy packet: {:?}", packet);
+                        }
+                        _ => {
+                            unimplemented!();
+                        }
+                    }
                 }
                 // An error occurred.
                 Some(Err(e)) => {
