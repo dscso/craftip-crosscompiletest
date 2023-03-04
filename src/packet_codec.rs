@@ -5,6 +5,8 @@ use bytes::{BufMut, BytesMut};
 use std::io;
 use thiserror::Error;
 use tokio_util::codec::{Decoder, Encoder};
+use crate::minecraft::MinecraftHelloPacket;
+use crate::socket_packet::SocketPacket::ProxyHelloPacket;
 
 /// An error occurred while encoding or decoding a frame
 #[derive(Debug, Error)]
@@ -61,8 +63,20 @@ impl Decoder for PacketCodec {
         return match self.protocol {
             // first packet
             Protocol::Unknown => {
-                let (result, protocol) = SocketPacket::parse_first_package(buf);
-                self.protocol = protocol;
+                let result = SocketPacket::parse_first_package(buf);
+                match result.as_ref() {
+                    Ok(Some(SocketPacket::ProxyHelloPacket(pkg))) => {
+                        tracing::info!("::::::::::::: Changing connection to proxy protocol version {} ::::::::::::::", pkg.version);
+                        self.protocol = Protocol::Proxy(pkg.version as u32);
+                    }
+                    Ok(Some(SocketPacket::MCHelloPacket(pkg))) => {
+                        tracing::info!("::::::::::::: Changing connection to MC protocol version {} ::::::::::::::", pkg.version);
+                        self.protocol = Protocol::MC(pkg.version as u32);
+                    }
+                    _ => {
+                        self.protocol = Protocol::Unknown;
+                    }
+                }
                 result
             }
             _ => SocketPacket::parse_packet(buf, self.protocol.clone()),

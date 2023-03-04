@@ -13,9 +13,8 @@ use tokio_util::codec::Framed;
 
 use tracing;
 
-use crate::minecraft::{MinecraftHelloPacket, MinecraftPacket};
+use crate::minecraft::{MinecraftHelloPacket};
 use crate::packet_codec::PacketCodec;
-use crate::proxy::ProxyPacket;
 use crate::socket_packet::SocketPacket;
 
 pub struct Shared {
@@ -121,10 +120,10 @@ pub async fn process_socket_connection(
     let packet = frames.next().await.expect("Did not get packet back")?;
     tracing::info!("received new packet: {:?}", packet);
     let mut connection = match packet {
-        SocketPacket::MinecraftPacket(MinecraftPacket::MCHelloPacket(hello_pkg)) => {
+        SocketPacket::MCHelloPacket(hello_pkg) => {
             Client::new_mc_client(state.clone(), frames, hello_pkg.clone()).await?
         }
-        SocketPacket::ProxyPacket(ProxyPacket::HelloPacket(hello_pkg)) => {
+        SocketPacket::ProxyHelloPacket(hello_pkg) => {
             Client::new_proxy_client(state.clone(), frames, hello_pkg.clone().hostname).await?
         }
         _ => {
@@ -148,18 +147,15 @@ pub async fn process_socket_connection(
                 Some(Ok(msg)) => {
                     tracing::info!("Received message: {:?}", msg);
                     match msg {
-                        SocketPacket::MinecraftPacket(MinecraftPacket::MCDataPacket(packet)) => {
+                        SocketPacket::MCDataPacket(packet) => {
                             tracing::info!("Received minecraft packet: {:?}", packet);
                             {
                                 let pkg = BytesMut::from(&packet.data.clone()[..]);
                                 state.lock().await.send_to_server("localhost".to_string(), &pkg).await;
                             }
                         }
-                        SocketPacket::ProxyPacket(packet) => {
+                        packet => {
                             tracing::info!("Received proxy packet: {:?}", packet);
-                        }
-                        _ => {
-                            unimplemented!();
                         }
                     }
                 }

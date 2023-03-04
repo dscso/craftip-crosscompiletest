@@ -1,5 +1,6 @@
 use bytes::{Buf, BytesMut};
 use std::mem::size_of;
+use serde::{Deserialize, Serialize};
 
 use crate::cursor::{CustomCursor, CustomCursorMethods};
 use crate::datatypes::PacketError;
@@ -9,33 +10,6 @@ const OLD_MINECRAFT_START: [u8; 27] = [
     0x6E, 0x00, 0x67, 0x00, 0x48, 0x00, 0x6F, 0x00, 0x73, 0x00, 0x74,
 ];
 
-#[derive(Debug, Clone)]
-pub enum MinecraftPacket {
-    MCHelloPacket(MinecraftHelloPacket),
-    MCDataPacket(MinecraftDataPacket),
-}
-
-impl From<MinecraftHelloPacket> for MinecraftPacket {
-    fn from(packet: MinecraftHelloPacket) -> Self {
-        MinecraftPacket::MCHelloPacket(packet)
-    }
-}
-
-impl From<MinecraftDataPacket> for MinecraftPacket {
-    fn from(packet: MinecraftDataPacket) -> Self {
-        MinecraftPacket::MCDataPacket(packet)
-    }
-}
-
-impl MinecraftPacket {
-    pub fn new(buf: &mut BytesMut, first_pkg: bool) -> Result<MinecraftPacket, PacketError> {
-        if first_pkg {
-            MinecraftHelloPacket::new(buf).map(MinecraftPacket::MCHelloPacket)
-        } else {
-            MinecraftDataPacket::new(buf).map(MinecraftPacket::MCDataPacket)
-        }
-    }
-}
 
 #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub struct MinecraftHelloPacket {
