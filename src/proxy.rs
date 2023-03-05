@@ -1,7 +1,4 @@
-use crate::cursor::{CustomCursor, CustomCursorMethods};
-use bytes::BytesMut;
 use serde::{Deserialize, Serialize};
-
 
 /// ProxyHelloPacket is the first packet sent by the client to the proxy.
 #[derive(Serialize, Deserialize, Debug, Clone)]

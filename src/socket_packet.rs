@@ -1,14 +1,12 @@
-use std::io::BufRead;
 use crate::client_handler::Protocol;
+use crate::cursor::CustomCursor;
 use crate::datatypes::PacketError;
 use bytes::{Buf, BytesMut};
-use tracing;
-use crate::cursor::CustomCursor;
 use serde::{Deserialize, Serialize};
-use crate::datatypes::PacketError::TooSmall;
+use std::io::BufRead;
+use tracing;
 
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
-use crate::packet_codec::PacketCodecError;
 use crate::proxy::{ProxyClientJoinPacket, ProxyDataPacket, ProxyHelloPacket};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -51,7 +49,6 @@ impl From<ProxyDataPacket> for SocketPacket {
     }
 }
 
-
 impl SocketPacket {
     pub fn new(buf: &mut BytesMut, first_pkg: bool) -> Result<SocketPacket, PacketError> {
         if first_pkg {
@@ -76,48 +73,32 @@ impl SocketPacket {
             return Err(PacketError::TooSmall);
         }
         buf.advance(cursor.position() as usize);
-        let packet: SocketPacket = serde_json::from_str(&line).map_err(|_| PacketError::NotValid)?;
+        let packet: SocketPacket =
+            serde_json::from_str(&line).map_err(|_| PacketError::NotValid)?;
         Ok(SocketPacket::from(packet))
     }
 }
 
 impl SocketPacket {
-    pub fn parse_first_package(
-        packet: &mut BytesMut,
-    ) -> Result<Option<SocketPacket>, PacketCodecError> {
-        // check if it is MC packet
-        let hello_packet = match MinecraftHelloPacket::new(packet) {
-            Ok(pkg) => { Ok(SocketPacket::from(pkg)) }
-            Err(PacketError::NotValid) => { SocketPacket::decode_proxy(packet) }
-            Err(PacketError::NotMatching) => { SocketPacket::decode_proxy(packet) }
-            Err(TooSmall) => { Err(TooSmall) }
-            Err(e) => { Err(e) }
-        };
-        match hello_packet {
-            Ok(hello_packet) => {
-                return Ok(Some(SocketPacket::from(hello_packet)));
-            }
-            Err(PacketError::TooSmall) => { Ok(None) }
-            Err(e) => return Err(PacketCodecError::from(e)),
+    pub fn parse_first_package(packet: &mut BytesMut) -> Result<SocketPacket, PacketError> {
+        match MinecraftHelloPacket::new(packet) {
+            Ok(pkg) => Ok(SocketPacket::from(pkg)),
+            Err(PacketError::NotValid) => SocketPacket::decode_proxy(packet),
+            Err(PacketError::NotMatching) => SocketPacket::decode_proxy(packet),
+            Err(e) => Err(e),
         }
     }
     /// gigantic match statement to determine the packet type
     pub fn parse_packet(
         buf: &mut BytesMut,
         protocol: Protocol,
-    ) -> Result<Option<SocketPacket>, PacketCodecError> {
-        let result = match protocol {
-            Protocol::MC(_) => MinecraftDataPacket::new(buf)
-                .map(SocketPacket::from),
+    ) -> Result<SocketPacket, PacketError> {
+        match protocol {
+            Protocol::MC(_) => MinecraftDataPacket::new(buf).map(SocketPacket::from),
             Protocol::Proxy(_) => SocketPacket::decode_proxy(buf),
             _ => {
                 unimplemented!()
             }
-        };
-        match result {
-            Ok(packet) => Ok(packet).map(Some),
-            Err(PacketError::TooSmall) => Ok(None),
-            Err(e) => Err(e),
-        }.map_err(PacketCodecError::from)
+        }
     }
 }

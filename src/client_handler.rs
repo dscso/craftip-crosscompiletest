@@ -3,9 +3,9 @@ use std::error::Error;
 use std::io;
 use std::sync::Arc;
 
-use std::net::SocketAddr;
 use bytes::BytesMut;
 use futures::SinkExt;
+use std::net::SocketAddr;
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::StreamExt;
@@ -13,7 +13,7 @@ use tokio_util::codec::Framed;
 
 use tracing;
 
-use crate::minecraft::{MinecraftHelloPacket};
+use crate::minecraft::MinecraftHelloPacket;
 use crate::packet_codec::PacketCodec;
 use crate::socket_packet::SocketPacket;
 
@@ -68,7 +68,7 @@ impl Client {
     async fn new_mc_client(
         state: Arc<Mutex<Shared>>,
         frames: Framed<TcpStream, PacketCodec>,
-        hello_packet: MinecraftHelloPacket,
+        hello_packet: &MinecraftHelloPacket,
     ) -> io::Result<Client> {
         // Get the client socket address
         let addr = frames.get_ref().peer_addr()?;
@@ -89,7 +89,7 @@ impl Client {
     async fn new_proxy_client(
         state: Arc<Mutex<Shared>>,
         frames: Framed<TcpStream, PacketCodec>,
-        server: String,
+        server: &str,
     ) -> io::Result<Client> {
         // Get the client socket address
         let addr = frames.get_ref().peer_addr()?;
@@ -99,7 +99,7 @@ impl Client {
 
         // Add an entry for this `Peer` in the shared state map.
 
-        state.lock().await.servers.insert(server, tx);
+        state.lock().await.servers.insert(server.to_string(), tx);
 
         Ok(Client {
             frames,
@@ -121,10 +121,10 @@ pub async fn process_socket_connection(
     tracing::info!("received new packet: {:?}", packet);
     let mut connection = match packet {
         SocketPacket::MCHelloPacket(hello_pkg) => {
-            Client::new_mc_client(state.clone(), frames, hello_pkg.clone()).await?
+            Client::new_mc_client(state.clone(), frames, &hello_pkg).await?
         }
         SocketPacket::ProxyHelloPacket(hello_pkg) => {
-            Client::new_proxy_client(state.clone(), frames, hello_pkg.clone().hostname).await?
+            Client::new_proxy_client(state.clone(), frames, &hello_pkg.hostname).await?
         }
         _ => {
             tracing::error!("Unknown protocol");
@@ -137,7 +137,6 @@ pub async fn process_socket_connection(
         tokio::select! {
             // A message was received from a peer. Send it to the current user.
             Some(pkg) = connection.rx.recv() => {
-                tracing::info!("Sending packet to client: {:?}", pkg);
                 let string = format!("{:?}", pkg);
                 connection.frames.send(string).await?;
             }
@@ -145,7 +144,6 @@ pub async fn process_socket_connection(
                 // A message was received from the current user, we should
                 // broadcast this message to the other users.
                 Some(Ok(msg)) => {
-                    tracing::info!("Received message: {:?}", msg);
                     match msg {
                         SocketPacket::MCDataPacket(packet) => {
                             tracing::info!("Received minecraft packet: {:?}", packet);

@@ -1,6 +1,6 @@
 use bytes::{Buf, BytesMut};
-use std::mem::size_of;
 use serde::{Deserialize, Serialize};
+use std::mem::size_of;
 
 use crate::cursor::{CustomCursor, CustomCursorMethods};
 use crate::datatypes::PacketError;
@@ -10,18 +10,17 @@ const OLD_MINECRAFT_START: [u8; 27] = [
     0x6E, 0x00, 0x67, 0x00, 0x48, 0x00, 0x6F, 0x00, 0x73, 0x00, 0x74,
 ];
 
-
-#[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize, Clone)]
 pub struct MinecraftHelloPacket {
     pub length: usize,
     pub id: i32,
     pub version: i32,
     pub hostname: String,
     pub port: u32,
-    pub raw: Vec<u8>,
+    pub data: Vec<u8>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MinecraftDataPacket {
     pub length: usize,
     pub data: Vec<u8>,
@@ -96,7 +95,7 @@ impl MinecraftHelloPacket {
             version: version as i32,
             port,
             hostname,
-            raw: cursor.get_ref()[..cursor.position() as usize].to_vec(),
+            data: cursor.get_ref()[..cursor.position() as usize].to_vec(),
         });
     }
     fn old_connect_pkg(buf: &mut BytesMut) -> Result<MinecraftHelloPacket, PacketError> {
@@ -119,7 +118,7 @@ impl MinecraftHelloPacket {
             version: version as i32,
             port,
             hostname,
-            raw: cursor.get_ref()[..cursor.position() as usize].to_vec(),
+            data: cursor.get_ref()[..cursor.position() as usize].to_vec(),
         });
     }
 
@@ -144,7 +143,7 @@ impl MinecraftHelloPacket {
             port: port as u32,
             version,
             hostname,
-            raw: cursor.get_ref()[..cursor.position() as usize].to_vec(),
+            data: cursor.get_ref()[..cursor.position() as usize].to_vec(),
         })
     }
 }

@@ -5,8 +5,6 @@ use bytes::{BufMut, BytesMut};
 use std::io;
 use thiserror::Error;
 use tokio_util::codec::{Decoder, Encoder};
-use crate::minecraft::MinecraftHelloPacket;
-use crate::socket_packet::SocketPacket::ProxyHelloPacket;
 
 /// An error occurred while encoding or decoding a frame
 #[derive(Debug, Error)]
@@ -60,16 +58,16 @@ impl Decoder for PacketCodec {
         if buf.len() > self.max_length {
             return Err(PacketCodecError::MaxLineLengthExceeded);
         }
-        return match self.protocol {
+        let result = match self.protocol {
             // first packet
             Protocol::Unknown => {
                 let result = SocketPacket::parse_first_package(buf);
                 match result.as_ref() {
-                    Ok(Some(SocketPacket::ProxyHelloPacket(pkg))) => {
+                    Ok(SocketPacket::ProxyHelloPacket(pkg)) => {
                         tracing::info!("::::::::::::: Changing connection to proxy protocol version {} ::::::::::::::", pkg.version);
                         self.protocol = Protocol::Proxy(pkg.version as u32);
                     }
-                    Ok(Some(SocketPacket::MCHelloPacket(pkg))) => {
+                    Ok(SocketPacket::MCHelloPacket(pkg)) => {
                         tracing::info!("::::::::::::: Changing connection to MC protocol version {} ::::::::::::::", pkg.version);
                         self.protocol = Protocol::MC(pkg.version as u32);
                     }
@@ -81,12 +79,18 @@ impl Decoder for PacketCodec {
             }
             _ => SocketPacket::parse_packet(buf, self.protocol.clone()),
         };
+        match result {
+            Ok(packet) => Ok(packet).map(Some),
+            Err(PacketError::TooSmall) => Ok(None),
+            Err(e) => Err(e),
+        }
+        .map_err(PacketCodecError::from)
     }
 }
 
 impl<T> Encoder<T> for PacketCodec
-    where
-        T: AsRef<str>,
+where
+    T: AsRef<str>,
 {
     type Error = PacketCodecError;
 
