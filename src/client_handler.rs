@@ -138,9 +138,12 @@ pub async fn process_socket_connection(
             let pkg = BytesMut::from(&proxy_pkg.encode().unwrap().to_vec()[..]);
             //let pkg = BytesMut::from(&packet.data.clone()[..]);
             {
-                state.lock().await.send_to_server("localhost".to_string(), &pkg).await;
+                state
+                    .lock()
+                    .await
+                    .send_to_server("localhost".to_string(), &pkg)
+                    .await;
             }
-
 
             //state.lock().await.send_to_server("localhost".to_string(), &bufmut).await;
             connection

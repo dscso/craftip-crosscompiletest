@@ -1,31 +1,21 @@
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use std::error::Error;
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
 use futures::SinkExt;
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{mpsc, Mutex};
+use tokio::net::TcpStream;
 use tokio_stream::StreamExt;
-use tokio_util::codec::{Framed, LinesCodec};
+use tokio_util::codec::Framed;
 
-use std::collections::HashMap;
-use std::{env, result};
-use std::io;
-use std::io::{Cursor, Read};
-use std::net::SocketAddr;
-use std::sync::Arc;
-
-mod socket_packet;
-mod packet_codec;
-mod minecraft;
-mod proxy;
-mod datatypes;
 mod cursor;
+mod datatypes;
+mod minecraft;
+mod packet_codec;
+mod proxy;
+mod socket_packet;
 
-use socket_packet::SocketPacket;
-use packet_codec::PacketCodec;
-use datatypes::Protocol;
 use crate::minecraft::MinecraftHelloPacket;
-use crate::socket_packet::SocketPacket::ProxyHelloPacket;
+use packet_codec::PacketCodec;
+use socket_packet::SocketPacket;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {

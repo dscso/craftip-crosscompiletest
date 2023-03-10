@@ -1,11 +1,10 @@
-use crate::datatypes::Protocol;
 use crate::cursor::{CustomCursor, CustomCursorMethods};
 use crate::datatypes::PacketError;
+use crate::datatypes::Protocol;
 use bytes::{Buf, BytesMut};
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use std::mem::size_of;
-use std::io::{Cursor, Write};
-use tracing;
 
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
 use crate::proxy::{ProxyClientJoinPacket, ProxyDataPacket, ProxyHelloPacket};
@@ -62,8 +61,12 @@ impl SocketPacket {
         let mut cursor = CustomCursor::new(vec![]);
         let packet = bincode::serialize(self).map_err(|_| PacketError::EncodingError)?;
         let packet_length = packet.len() as u16;
-        cursor.write_all(&packet_length.to_be_bytes()).expect("encoding error in write_all function");
-        cursor.write_all(&packet).expect("encoding error in write_all function");
+        cursor
+            .write_all(&packet_length.to_be_bytes())
+            .expect("encoding error in write_all function");
+        cursor
+            .write_all(&packet)
+            .expect("encoding error in write_all function");
         Ok(cursor.get_ref()[..cursor.position() as usize].to_vec())
     }
 }
@@ -74,8 +77,11 @@ impl SocketPacket {
         cursor.throw_error_if_smaller(size_of::<u16>())?;
         let length = cursor.get_u16();
         cursor.throw_error_if_smaller(length as usize)?;
-        let result = bincode::deserialize::<SocketPacket>(&cursor.get_ref()[cursor.position() as usize..cursor.position() as usize + length as usize])
-            .map_err(|_| PacketError::NotValid)?;
+        let result = bincode::deserialize::<SocketPacket>(
+            &cursor.get_ref()
+                [cursor.position() as usize..cursor.position() as usize + length as usize],
+        )
+        .map_err(|_| PacketError::NotValid)?;
         buf.advance(cursor.position() as usize + length as usize);
         // decode bincode packet
         return Ok(result);

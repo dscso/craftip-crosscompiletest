@@ -47,4 +47,3 @@ pub enum Protocol {
     MC(u32),
     Proxy(u32),
 }
-

@@ -1,5 +1,5 @@
-use crate::datatypes::Protocol;
 use crate::datatypes::PacketError;
+use crate::datatypes::Protocol;
 use crate::socket_packet::SocketPacket;
 use bytes::{BufMut, Bytes, BytesMut};
 use std::io;
@@ -78,16 +78,14 @@ impl Decoder for PacketCodec {
                 }
                 result
             }
-            _ => {
-                SocketPacket::parse_packet(buf, &self.protocol)
-            }
+            _ => SocketPacket::parse_packet(buf, &self.protocol),
         };
         match result {
             Ok(packet) => Ok(packet).map(Some),
             Err(PacketError::TooSmall) => Ok(None),
             Err(e) => Err(e),
         }
-            .map_err(PacketCodecError::from)
+        .map_err(PacketCodecError::from)
     }
 }
 
@@ -116,18 +114,12 @@ impl Encoder<SocketPacket> for PacketCodec {
 
     fn encode(&mut self, pkg: SocketPacket, buf: &mut BytesMut) -> Result<(), io::Error> {
         let data = match pkg {
-            SocketPacket::MCHelloPacket(packet) => {
-                packet.data
-            }
-            SocketPacket::MCDataPacket(packet) => {
-                packet.data
-            }
-            SocketPacket::UnknownPacket => {
-                "UnknownPacket".to_string().into_bytes()
-            }
-            packet => {
-                packet.encode().map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
-            }
+            SocketPacket::MCHelloPacket(packet) => packet.data,
+            SocketPacket::MCDataPacket(packet) => packet.data,
+            SocketPacket::UnknownPacket => "UnknownPacket".to_string().into_bytes(),
+            packet => packet
+                .encode()
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?,
         };
         buf.reserve(data.len());
         buf.put(&data[..]);

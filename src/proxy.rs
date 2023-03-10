@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
+use serde::{Deserialize, Serialize};
 
 /// ProxyHelloPacket is the first packet sent by the client to the proxy.
 #[derive(Serialize, Deserialize, Debug, Clone)]
