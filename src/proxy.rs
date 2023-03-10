@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
 
 /// ProxyHelloPacket is the first packet sent by the client to the proxy.
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -16,6 +17,26 @@ pub struct ProxyClientJoinPacket {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ProxyDataPacket {
     pub length: usize,
-    pub client_id: u32,
+    pub client_id: u16,
     pub data: Vec<u8>,
+}
+
+impl From<MinecraftHelloPacket> for ProxyDataPacket {
+    fn from(packet: MinecraftHelloPacket) -> Self {
+        ProxyDataPacket {
+            length: packet.length,
+            client_id: 0,
+            data: packet.data,
+        }
+    }
+}
+
+impl From<MinecraftDataPacket> for ProxyDataPacket {
+    fn from(packet: MinecraftDataPacket) -> Self {
+        ProxyDataPacket {
+            length: packet.length,
+            client_id: 0,
+            data: packet.data,
+        }
+    }
 }

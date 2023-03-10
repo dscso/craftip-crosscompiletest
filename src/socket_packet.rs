@@ -1,9 +1,10 @@
-use crate::client_handler::Protocol;
-use crate::cursor::CustomCursor;
+use crate::datatypes::Protocol;
+use crate::cursor::{CustomCursor, CustomCursorMethods};
 use crate::datatypes::PacketError;
 use bytes::{Buf, BytesMut};
 use serde::{Deserialize, Serialize};
-use std::io::BufRead;
+use std::mem::size_of;
+use std::io::{Cursor, Write};
 use tracing;
 
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
@@ -58,24 +59,26 @@ impl SocketPacket {
         }
     }
     pub fn encode(&self) -> Result<Vec<u8>, PacketError> {
-        let packet = serde_json::to_string(self).map_err(|_| PacketError::NotValid)?;
-        Ok(packet.as_bytes().to_vec())
+        let mut cursor = CustomCursor::new(vec![]);
+        let packet = bincode::serialize(self).map_err(|_| PacketError::EncodingError)?;
+        let packet_length = packet.len() as u16;
+        cursor.write_all(&packet_length.to_be_bytes()).expect("encoding error in write_all function");
+        cursor.write_all(&packet).expect("encoding error in write_all function");
+        Ok(cursor.get_ref()[..cursor.position() as usize].to_vec())
     }
 }
 
 impl SocketPacket {
     pub fn decode_proxy(buf: &mut BytesMut) -> Result<SocketPacket, PacketError> {
         let mut cursor = CustomCursor::new(buf.to_vec());
-        // create new empty string
-        let mut line = String::new();
-        // read a line into the string if there is one advance buffer if not return error
-        if cursor.read_line(&mut line).is_err() {
-            return Err(PacketError::TooSmall);
-        }
-        buf.advance(cursor.position() as usize);
-        let packet: SocketPacket =
-            serde_json::from_str(&line).map_err(|_| PacketError::NotValid)?;
-        Ok(SocketPacket::from(packet))
+        cursor.throw_error_if_smaller(size_of::<u16>())?;
+        let length = cursor.get_u16();
+        cursor.throw_error_if_smaller(length as usize)?;
+        let result = bincode::deserialize::<SocketPacket>(&cursor.get_ref()[cursor.position() as usize..cursor.position() as usize + length as usize])
+            .map_err(|_| PacketError::NotValid)?;
+        buf.advance(cursor.position() as usize + length as usize);
+        // decode bincode packet
+        return Ok(result);
     }
 }
 
@@ -91,7 +94,7 @@ impl SocketPacket {
     /// gigantic match statement to determine the packet type
     pub fn parse_packet(
         buf: &mut BytesMut,
-        protocol: Protocol,
+        protocol: &Protocol,
     ) -> Result<SocketPacket, PacketError> {
         match protocol {
             Protocol::MC(_) => MinecraftDataPacket::new(buf).map(SocketPacket::from),

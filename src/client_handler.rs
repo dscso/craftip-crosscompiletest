@@ -15,6 +15,7 @@ use tracing;
 
 use crate::minecraft::MinecraftHelloPacket;
 use crate::packet_codec::PacketCodec;
+use crate::proxy::ProxyDataPacket;
 use crate::socket_packet::SocketPacket;
 
 pub struct Shared {
@@ -55,8 +56,16 @@ impl Shared {
     }*/
     async fn send_to_server(&mut self, server: String, buf: &BytesMut) {
         for peer in self.servers.iter_mut() {
-            println!("{} == {}", peer.0, server);
-            //if *peer.0 == server {
+            tracing::info!("MC -> Server {}", buf.len());
+            if *peer.0 == server {
+                let _ = peer.1.send(buf.clone());
+            }
+        }
+    }
+    async fn send_to_client(&mut self, client: String, buf: &BytesMut) {
+        for peer in self.clients.iter_mut() {
+            tracing::info!("Server -> MC {}", buf.len());
+            //if *peer.0 == client {
             let _ = peer.1.send(buf.clone());
             //}
         }
@@ -114,21 +123,35 @@ pub async fn process_socket_connection(
     addr: SocketAddr,
     state: Arc<Mutex<Shared>>,
 ) -> Result<(), Box<dyn Error>> {
+    let max_pkg_size = 0;
     tracing::info!("new connection from: {}", addr);
-    let mut frames = Framed::new(socket, PacketCodec::new(1000));
+    let mut frames = Framed::new(socket, PacketCodec::new(1024 * 8));
     // In a loop, read data from the socket and write the data back.
-    let packet = frames.next().await.expect("Did not get packet back")?;
+    let packet = frames.next().await.ok_or("No first packet received")??;
     tracing::info!("received new packet: {:?}", packet);
     let mut connection = match packet {
         SocketPacket::MCHelloPacket(hello_pkg) => {
-            Client::new_mc_client(state.clone(), frames, &hello_pkg).await?
+            let mut connection = Client::new_mc_client(state.clone(), frames, &hello_pkg).await?;
+
+            let proxy_pkg = SocketPacket::ProxyDataPacket(ProxyDataPacket::from(hello_pkg));
+            //println!("Sending proxy packet: {:?}", proxy_pkg.encode().unwrap());
+            let pkg = BytesMut::from(&proxy_pkg.encode().unwrap().to_vec()[..]);
+            //let pkg = BytesMut::from(&packet.data.clone()[..]);
+            {
+                state.lock().await.send_to_server("localhost".to_string(), &pkg).await;
+            }
+
+
+            //state.lock().await.send_to_server("localhost".to_string(), &bufmut).await;
+            connection
         }
         SocketPacket::ProxyHelloPacket(hello_pkg) => {
             Client::new_proxy_client(state.clone(), frames, &hello_pkg.hostname).await?
         }
         _ => {
             tracing::error!("Unknown protocol");
-            return Ok(());
+            Client::new_proxy_client(state.clone(), frames, "anonymous debug").await?
+            //return Ok(());
         }
     };
     //let mut connection = state.lock().await.servers.get("localhost").unwrap().clone();
@@ -137,8 +160,8 @@ pub async fn process_socket_connection(
         tokio::select! {
             // A message was received from a peer. Send it to the current user.
             Some(pkg) = connection.rx.recv() => {
-                let string = format!("{:?}", pkg);
-                connection.frames.send(string).await?;
+                //tracing::info!("Sending packet to client: {:?}", pkg);
+                connection.frames.send(pkg).await?;
             }
             result = connection.frames.next() => match result {
                 // A message was received from the current user, we should
@@ -146,10 +169,19 @@ pub async fn process_socket_connection(
                 Some(Ok(msg)) => {
                     match msg {
                         SocketPacket::MCDataPacket(packet) => {
-                            tracing::info!("Received minecraft packet: {:?}", packet);
+                            //tracing::info!("Received minecraft packet: {:?}", packet);
+                            let proxy_pkg = SocketPacket::ProxyDataPacket(ProxyDataPacket::from(packet.clone()));
+                            let pkg = BytesMut::from(&proxy_pkg.encode().unwrap().to_vec()[..]);
+                            println!("Proxy pkg {} original {} {:?}", packet.data.len(), pkg.len(), packet);
                             {
-                                let pkg = BytesMut::from(&packet.data.clone()[..]);
                                 state.lock().await.send_to_server("localhost".to_string(), &pkg).await;
+                            }
+                        }
+                        SocketPacket::ProxyDataPacket(packet) => {
+                            //tracing::info!("Received ProxyDataPacket packet: {:?}", packet);
+                            {
+                                let pkg = BytesMut::from(&packet.data[..]);
+                                state.lock().await.send_to_client("localhost".to_string(), &pkg).await;
                             }
                         }
                         packet => {
@@ -174,6 +206,14 @@ pub async fn process_socket_connection(
         //frames.send("Helloaksjdlaksjdklasjdlkasjdlkasjdlsakj".to_string()).await?;
         //let peer = Peer::new(state.clone(), frames).await?;
     }
+    if let ConnectionType::MCClient = connection.connection_type {
+        tracing::info!("removing Minecraft client {addr} from state");
+        state.lock().await.clients.remove(&addr);
+    }
+    if let ConnectionType::ProxyClient = connection.connection_type {
+        tracing::info!("removing Proxy {addr} from state");
+        state.lock().await.servers.remove("localhost");
+    }
     Ok(())
 }
 
@@ -181,11 +221,4 @@ pub enum ConnectionType {
     Unknown,
     MCClient,
     ProxyClient,
-}
-
-#[derive(Debug, Clone)]
-pub enum Protocol {
-    Unknown,
-    MC(u32),
-    Proxy(u32),
 }

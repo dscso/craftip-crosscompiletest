@@ -28,11 +28,12 @@ pub struct MinecraftDataPacket {
 
 impl MinecraftDataPacket {
     pub fn new(buf: &mut BytesMut) -> Result<MinecraftDataPacket, PacketError> {
-        let length = buf.len();
+        let mut length = buf.len();
         if length < 1 {
             return Err(PacketError::NotValid);
         }
         let data = buf.to_vec();
+
         buf.advance(length);
         Ok(MinecraftDataPacket { length, data })
     }

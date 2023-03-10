@@ -31,7 +31,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .unwrap_or_else(|| "127.0.0.1:25565".to_string());
 
     let mc_listener = TcpListener::bind(&addr).await?;
-    tracing::info!("server running on {}", addr);
+    tracing::info!("server running on {:?}", mc_listener.local_addr()?);
 
     let state = Arc::new(Mutex::new(client_handler::Shared::new()));
     loop {

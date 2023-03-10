@@ -1,7 +1,7 @@
-use crate::client_handler::Protocol;
+use crate::datatypes::Protocol;
 use crate::datatypes::PacketError;
 use crate::socket_packet::SocketPacket;
-use bytes::{BufMut, BytesMut};
+use bytes::{BufMut, Bytes, BytesMut};
 use std::io;
 use thiserror::Error;
 use tokio_util::codec::{Decoder, Encoder};
@@ -41,6 +41,7 @@ impl From<PacketError> for PacketCodecError {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct PacketCodec {
     max_length: usize,
     protocol: Protocol,
@@ -77,27 +78,59 @@ impl Decoder for PacketCodec {
                 }
                 result
             }
-            _ => SocketPacket::parse_packet(buf, self.protocol.clone()),
+            _ => {
+                SocketPacket::parse_packet(buf, &self.protocol)
+            }
         };
         match result {
             Ok(packet) => Ok(packet).map(Some),
             Err(PacketError::TooSmall) => Ok(None),
             Err(e) => Err(e),
         }
-        .map_err(PacketCodecError::from)
+            .map_err(PacketCodecError::from)
     }
 }
 
-impl<T> Encoder<T> for PacketCodec
-where
-    T: AsRef<str>,
-{
-    type Error = PacketCodecError;
+impl Encoder<Bytes> for PacketCodec {
+    type Error = io::Error;
 
-    fn encode(&mut self, packet: T, buf: &mut BytesMut) -> Result<(), PacketCodecError> {
-        let packet = packet.as_ref();
-        buf.reserve(packet.len());
-        buf.put(packet.as_bytes());
+    fn encode(&mut self, data: Bytes, buf: &mut BytesMut) -> Result<(), io::Error> {
+        buf.reserve(data.len());
+        buf.put(data);
+        Ok(())
+    }
+}
+
+impl Encoder<BytesMut> for PacketCodec {
+    type Error = io::Error;
+
+    fn encode(&mut self, data: BytesMut, buf: &mut BytesMut) -> Result<(), io::Error> {
+        buf.reserve(data.len());
+        buf.put(data);
+        Ok(())
+    }
+}
+
+impl Encoder<SocketPacket> for PacketCodec {
+    type Error = io::Error;
+
+    fn encode(&mut self, pkg: SocketPacket, buf: &mut BytesMut) -> Result<(), io::Error> {
+        let data = match pkg {
+            SocketPacket::MCHelloPacket(packet) => {
+                packet.data
+            }
+            SocketPacket::MCDataPacket(packet) => {
+                packet.data
+            }
+            SocketPacket::UnknownPacket => {
+                "UnknownPacket".to_string().into_bytes()
+            }
+            packet => {
+                packet.encode().map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
+            }
+        };
+        buf.reserve(data.len());
+        buf.put(&data[..]);
         Ok(())
     }
 }
