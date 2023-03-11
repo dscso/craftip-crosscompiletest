@@ -1,3 +1,4 @@
+mod addressing;
 mod client_handler;
 mod cursor;
 mod datatypes;

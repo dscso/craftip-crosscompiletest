@@ -57,7 +57,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 // A message was received from the current user, we should
                 // broadcast this message to the other users.
                 Some(Ok(msg)) => {
-                    tracing::info!("received message from server 1: {:?}", msg);
+                    println!("received message from server 1: {:?}", msg);
                     // Forward the message to server 2
                     /*let mut bytes = BytesMut::from(msg.as_bytes());
                     let packet = SocketPacket::parse_packet(&mut bytes, &Protocol::Proxy(1)).unwrap();
@@ -88,9 +88,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     println!("MC has closed the connection");
                     break; // server 2 has closed the connection
                 }
-
+                println!("received message from server 2: {:?}", &buf2[0..n]);
                 // Forward the message to server 1
-                let packet = SocketPacket::ProxyDataPacket(proxy::ProxyDataPacket {
+                let packet = SocketPacket::from(proxy::ProxyDataPacket {
                     data: buf2[0..n].to_vec(),
                     client_id: 0,
                     length: n as usize,
@@ -99,6 +99,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 //let json = String::from_utf8_lossy(&packet.encode().unwrap()).to_string();
                 //println!("Server 2: {} content: {:?}",n,  packet);
                 //println!("sendign json: {}", json);
+                println!("sendign {:?}", packet);
                 proxy.send(packet).await?;
             }
         }

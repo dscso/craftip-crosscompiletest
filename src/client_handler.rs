@@ -13,7 +13,7 @@ use tokio_util::codec::Framed;
 
 use tracing;
 
-use crate::minecraft::MinecraftHelloPacket;
+use crate::minecraft::{MinecraftHelloPacket, MinecraftDataPacket};
 use crate::packet_codec::PacketCodec;
 use crate::proxy::ProxyDataPacket;
 use crate::socket_packet::SocketPacket;
@@ -23,11 +23,8 @@ pub struct Shared {
     pub servers: HashMap<String, Tx>,
 }
 
-/// Shorthand for the transmit half of the message channel.
-type Tx = mpsc::UnboundedSender<BytesMut>;
-
-/// Shorthand for the receive half of the message channel.
-type Rx = mpsc::UnboundedReceiver<BytesMut>;
+type Tx = mpsc::UnboundedSender<SocketPacket>;
+type Rx = mpsc::UnboundedReceiver<SocketPacket>;
 
 /// The state for each connected client.
 struct Client {
@@ -44,29 +41,19 @@ impl Shared {
             servers: HashMap::new(),
         }
     }
-
-    /// Send a `LineCodec` encoded message to every peer, except
-    /// for the sender.
-    /*async fn broadcast(&mut self, sender: SocketAddr, message: &str) {
+    async fn send_to_server(&mut self, server: String, packet: &SocketPacket) {
+        tracing::info!("MC -> Server {:?}", packet);
         for peer in self.servers.iter_mut() {
-            if *peer.0 != sender {
-                let _ = peer.1.send(message.into());
-            }
-        }
-    }*/
-    async fn send_to_server(&mut self, server: String, buf: &BytesMut) {
-        for peer in self.servers.iter_mut() {
-            tracing::info!("MC -> Server {}", buf.len());
             if *peer.0 == server {
-                let _ = peer.1.send(buf.clone());
+                let _ = peer.1.send(packet.clone());
             }
         }
     }
-    async fn send_to_client(&mut self, client: String, buf: &BytesMut) {
+    async fn send_to_client(&mut self, client: String, packet: &SocketPacket) {
         for peer in self.clients.iter_mut() {
-            tracing::info!("Server -> MC {}", buf.len());
+            tracing::info!("Server -> MC {:?}", packet);
             //if *peer.0 == client {
-            let _ = peer.1.send(buf.clone());
+            let _ = peer.1.send(packet.clone());
             //}
         }
     }
@@ -123,25 +110,20 @@ pub async fn process_socket_connection(
     addr: SocketAddr,
     state: Arc<Mutex<Shared>>,
 ) -> Result<(), Box<dyn Error>> {
-    let max_pkg_size = 0;
     tracing::info!("new connection from: {}", addr);
     let mut frames = Framed::new(socket, PacketCodec::new(1024 * 8));
     // In a loop, read data from the socket and write the data back.
     let packet = frames.next().await.ok_or("No first packet received")??;
     tracing::info!("received new packet: {:?}", packet);
     let mut connection = match packet {
-        SocketPacket::MCHelloPacket(hello_pkg) => {
-            let mut connection = Client::new_mc_client(state.clone(), frames, &hello_pkg).await?;
-
-            let proxy_pkg = SocketPacket::ProxyDataPacket(ProxyDataPacket::from(hello_pkg));
-            //println!("Sending proxy packet: {:?}", proxy_pkg.encode().unwrap());
-            let pkg = BytesMut::from(&proxy_pkg.encode().unwrap().to_vec()[..]);
-            //let pkg = BytesMut::from(&packet.data.clone()[..]);
+        SocketPacket::MCHelloPacket(packet) => {
+            let connection = Client::new_mc_client(state.clone(), frames, &packet).await?;
+            let proxy_packet = SocketPacket::ProxyDataPacket(ProxyDataPacket::from(packet));
             {
                 state
                     .lock()
                     .await
-                    .send_to_server("localhost".to_string(), &pkg)
+                    .send_to_server("localhost".to_string(), &proxy_packet)
                     .await;
             }
 
@@ -153,8 +135,7 @@ pub async fn process_socket_connection(
         }
         _ => {
             tracing::error!("Unknown protocol");
-            Client::new_proxy_client(state.clone(), frames, "anonymous debug").await?
-            //return Ok(());
+            return Ok(());
         }
     };
     //let mut connection = state.lock().await.servers.get("localhost").unwrap().clone();
@@ -167,24 +148,23 @@ pub async fn process_socket_connection(
                 connection.frames.send(pkg).await?;
             }
             result = connection.frames.next() => match result {
-                // A message was received from the current user, we should
-                // broadcast this message to the other users.
                 Some(Ok(msg)) => {
                     match msg {
                         SocketPacket::MCDataPacket(packet) => {
-                            //tracing::info!("Received minecraft packet: {:?}", packet);
-                            let proxy_pkg = SocketPacket::ProxyDataPacket(ProxyDataPacket::from(packet.clone()));
-                            let pkg = BytesMut::from(&proxy_pkg.encode().unwrap().to_vec()[..]);
-                            println!("Proxy pkg {} original {} {:?}", packet.data.len(), pkg.len(), packet);
+                            let proxy_packet = SocketPacket::ProxyDataPacket(ProxyDataPacket::from(packet));
                             {
-                                state.lock().await.send_to_server("localhost".to_string(), &pkg).await;
+                                state
+                                    .lock()
+                                    .await
+                                    .send_to_server("localhost".to_string(), &proxy_packet)
+                                    .await;
                             }
                         }
                         SocketPacket::ProxyDataPacket(packet) => {
-                            //tracing::info!("Received ProxyDataPacket packet: {:?}", packet);
+                            // todo verify if this is really a proxy
+                            let mc_packet = SocketPacket::MCDataPacket(MinecraftDataPacket::from(packet));
                             {
-                                let pkg = BytesMut::from(&packet.data[..]);
-                                state.lock().await.send_to_client("localhost".to_string(), &pkg).await;
+                                state.lock().await.send_to_client("localhost".to_string(), &mc_packet).await;
                             }
                         }
                         packet => {
@@ -206,8 +186,6 @@ pub async fn process_socket_connection(
                 },
             },
         }
-        //frames.send("Helloaksjdlaksjdklasjdlkasjdlkasjdlsakj".to_string()).await?;
-        //let peer = Peer::new(state.clone(), frames).await?;
     }
     if let ConnectionType::MCClient = connection.connection_type {
         tracing::info!("removing Minecraft client {addr} from state");
@@ -220,6 +198,7 @@ pub async fn process_socket_connection(
     Ok(())
 }
 
+#[derive(Debug)]
 pub enum ConnectionType {
     Unknown,
     MCClient,

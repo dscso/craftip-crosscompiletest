@@ -116,7 +116,10 @@ impl Encoder<SocketPacket> for PacketCodec {
         let data = match pkg {
             SocketPacket::MCHelloPacket(packet) => packet.data,
             SocketPacket::MCDataPacket(packet) => packet.data,
-            SocketPacket::UnknownPacket => "UnknownPacket".to_string().into_bytes(),
+            SocketPacket::UnknownPacket => {
+                tracing::error!("UnknownPacket: {:?}", pkg);
+                "UnknownPacket".to_string().into_bytes()
+            }
             packet => packet
                 .encode()
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?,

@@ -4,6 +4,7 @@ use std::mem::size_of;
 
 use crate::cursor::{CustomCursor, CustomCursorMethods};
 use crate::datatypes::PacketError;
+use crate::proxy::ProxyDataPacket;
 
 const OLD_MINECRAFT_START: [u8; 27] = [
     0xFE, 0x01, 0xFA, 0x00, 0x0B, 0x00, 0x4D, 0x00, 0x43, 0x00, 0x7C, 0x00, 0x50, 0x00, 0x69, 0x00,
@@ -26,16 +27,21 @@ pub struct MinecraftDataPacket {
     pub data: Vec<u8>,
 }
 
+impl From<ProxyDataPacket> for MinecraftDataPacket {
+    fn from(packet: ProxyDataPacket) -> Self {
+        MinecraftDataPacket {
+            length: packet.length,
+            data: packet.data,
+        }
+    }
+}
+
 impl MinecraftDataPacket {
     pub fn new(buf: &mut BytesMut) -> Result<MinecraftDataPacket, PacketError> {
-        let mut length = buf.len();
-        if length < 1 {
-            return Err(PacketError::NotValid);
-        }
-        let data = buf.to_vec();
-
-        buf.advance(length);
-        Ok(MinecraftDataPacket { length, data })
+        Ok(MinecraftDataPacket {
+            length: buf.len(),
+            data: buf.split_to(buf.len()).to_vec(),
+        })
     }
 }
 
@@ -89,15 +95,14 @@ impl MinecraftHelloPacket {
         cursor.throw_error_if_smaller(size_of::<u32>())?;
         let port = cursor.get_u32();
 
-        buf.advance(cursor.position() as usize);
-        return Ok(MinecraftHelloPacket {
+        Ok(MinecraftHelloPacket {
             length: cursor.position() as usize,
             id: 0,
             version: version as i32,
             port,
             hostname,
-            data: cursor.get_ref()[..cursor.position() as usize].to_vec(),
-        });
+            data: buf.split_to(cursor.position() as usize).to_vec(),
+        })
     }
     fn old_connect_pkg(buf: &mut BytesMut) -> Result<MinecraftHelloPacket, PacketError> {
         let mut cursor = CustomCursor::new(buf.to_vec());
@@ -105,6 +110,7 @@ impl MinecraftHelloPacket {
             return Err(PacketError::NotMatching);
         }
         // todo test if this is really the version!
+        cursor.throw_error_if_smaller(size_of::<u8>())?;
         let version = cursor.get_u8();
         // wait for the packet to fully arrive
         let _username = cursor.get_utf16_string()?;
@@ -112,15 +118,14 @@ impl MinecraftHelloPacket {
         cursor.throw_error_if_smaller(size_of::<u32>())?;
         let port = cursor.get_u32();
 
-        buf.advance(cursor.position() as usize);
-        return Ok(MinecraftHelloPacket {
+        Ok(MinecraftHelloPacket {
             length: cursor.position() as usize,
             id: 0,
             version: version as i32,
             port,
             hostname,
-            data: cursor.get_ref()[..cursor.position() as usize].to_vec(),
-        });
+            data: buf.split_to(cursor.position() as usize).to_vec(),
+        })
     }
 
     fn new_pkg(buf: &mut BytesMut) -> Result<MinecraftHelloPacket, PacketError> {
@@ -137,14 +142,14 @@ impl MinecraftHelloPacket {
         if cursor.position() as usize != pkg_length as usize {
             return Err(PacketError::NotValid);
         }
-        buf.advance(cursor.position() as usize);
+
         Ok(MinecraftHelloPacket {
             length: cursor.position() as usize,
             id: pkg_id,
             port: port as u32,
             version,
             hostname,
-            data: cursor.get_ref()[..cursor.position() as usize].to_vec(),
+            data: buf.split_to(cursor.position() as usize).to_vec(),
         })
     }
 }
