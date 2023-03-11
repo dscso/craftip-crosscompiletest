@@ -1,6 +1,7 @@
 use bytes::BytesMut;
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use futures::SinkExt;
 use thiserror::Error;
 use tokio::sync::mpsc;
 use crate::socket_packet::SocketPacket;
@@ -72,12 +73,12 @@ impl Distributor {
         Ok(())
     }
 
-    pub fn remove_client(&mut self, addr: SocketAddr) {
+    pub fn remove_client(&mut self, addr: &SocketAddr) {
         let (tx, hostname) = self.clients.remove(&addr).unwrap();
         let server = self.servers.get_mut(&hostname).unwrap();
         let mut id = 0;
         for client in self.server_clients.get_mut(&hostname).unwrap() {
-            if client.is_some() && client.unwrap() == addr {
+            if client.is_some() && client.unwrap() == *addr {
                 *client = None;
                 return;
             }
@@ -98,7 +99,7 @@ impl Distributor {
         self.server_clients.remove(hostname);
     }
 
-    async fn send_to_server(&mut self, server: String, packet: SocketPacket) {
+    pub fn send_to_server(&mut self, server: &str, packet: &SocketPacket) {
         for peer in self.servers.iter_mut() {
             tracing::info!("MC -> Server");
             if *peer.0 == server {
@@ -107,10 +108,10 @@ impl Distributor {
         }
     }
 
-    async fn send_to_client(&mut self, client: String, buf: SocketPacket) {
+    pub fn send_to_client(&mut self, client: &str, packet: &SocketPacket) {
         for peer in self.clients.iter_mut() {
             //if *peer.0 == client {
-            //let _ = peer.1.send(buf.clone());
+            let _ = peer.1.0.send(packet.clone());
             //}
         }
     }

@@ -5,21 +5,22 @@ use std::sync::Arc;
 
 use futures::SinkExt;
 use std::net::SocketAddr;
+use std::ops::Deref;
+use rand::prelude::Distribution;
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 
 use tracing;
-use crate::addressing::{Rx, Tx};
+use crate::addressing::{Distributor, Rx, Tx};
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
 use crate::packet_codec::PacketCodec;
 use crate::proxy::ProxyDataPacket;
 use crate::socket_packet::SocketPacket;
 
 pub struct Shared {
-    pub clients: HashMap<SocketAddr, Tx>,
-    pub servers: HashMap<String, Tx>,
+    pub distributor: Distributor,
 }
 
 /// The state for each connected client.
@@ -33,24 +34,7 @@ impl Shared {
     /// Create a new, empty, instance of `Shared`.
     pub(crate) fn new() -> Self {
         Shared {
-            clients: HashMap::new(),
-            servers: HashMap::new(),
-        }
-    }
-    async fn send_to_server(&mut self, server: String, packet: &SocketPacket) {
-        tracing::info!("MC -> Server {:?}", packet);
-        for peer in self.servers.iter_mut() {
-            if *peer.0 == server {
-                let _ = peer.1.send(packet.clone());
-            }
-        }
-    }
-    async fn send_to_client(&mut self, client: String, packet: &SocketPacket) {
-        for peer in self.clients.iter_mut() {
-            tracing::info!("Server -> MC {:?}", packet);
-            //if *peer.0 == client {
-            let _ = peer.1.send(packet.clone());
-            //}
+            distributor: Distributor::new(),
         }
     }
 }
@@ -67,7 +51,7 @@ impl Client {
 
         let (tx, rx) = mpsc::unbounded_channel();
 
-        state.lock().await.clients.insert(addr, tx);
+        state.lock().await.distributor.add_client(addr, &hello_packet.hostname, tx).unwrap();
 
         Ok(Client {
             frames,
@@ -84,7 +68,7 @@ impl Client {
 
         let (tx, rx) = mpsc::unbounded_channel();
 
-        state.lock().await.servers.insert(server.to_string(), tx);
+        state.lock().await.distributor.add_server(server, tx).unwrap();
 
         Ok(Client {
             frames,
@@ -115,9 +99,8 @@ pub async fn process_socket_connection(
             {
                 state
                     .lock()
-                    .await
-                    .send_to_server("localhost".to_string(), &proxy_packet)
-                    .await;
+                    .await.distributor
+                    .send_to_server("localhost", &proxy_packet);
             }
 
             //state.lock().await.send_to_server("localhost".to_string(), &bufmut).await;
@@ -148,16 +131,16 @@ pub async fn process_socket_connection(
                             {
                                 state
                                     .lock()
-                                    .await
-                                    .send_to_server("localhost".to_string(), &proxy_packet)
-                                    .await;
+                                    .await.distributor
+                                    .send_to_server("localhost", &proxy_packet);
                             }
                         }
                         SocketPacket::ProxyDataPacket(packet) => {
                             // todo verify if this is really a proxy
                             let mc_packet = SocketPacket::MCDataPacket(MinecraftDataPacket::from(packet));
                             {
-                                state.lock().await.send_to_client("localhost".to_string(), &mc_packet).await;
+                                state.lock().await.distributor
+                                .send_to_client("localhost", &mc_packet);
                             }
                         }
                         packet => {
@@ -179,11 +162,11 @@ pub async fn process_socket_connection(
     }
     if let ConnectionType::MCClient = connection.connection_type {
         tracing::info!("removing Minecraft client {addr} from state");
-        state.lock().await.clients.remove(&addr);
+        state.lock().await.distributor.remove_client(&addr);
     }
     if let ConnectionType::ProxyClient = connection.connection_type {
         tracing::info!("removing Proxy {addr} from state");
-        state.lock().await.servers.remove("localhost");
+        state.lock().await.distributor.remove_server("localhost");
     }
     Ok(())
 }
