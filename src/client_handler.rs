@@ -1,19 +1,16 @@
-use std::collections::HashMap;
 use std::error::Error;
 use std::io;
 use std::sync::Arc;
 
 use futures::SinkExt;
 use std::net::SocketAddr;
-use std::ops::Deref;
-use rand::prelude::Distribution;
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 
 use tracing;
-use crate::addressing::{Distributor, Rx, Tx};
+use crate::addressing::{Distributor, Rx};
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
 use crate::packet_codec::PacketCodec;
 use crate::proxy::ProxyDataPacket;
@@ -51,12 +48,14 @@ impl Client {
 
         let (tx, rx) = mpsc::unbounded_channel();
 
-        state.lock().await.distributor.add_client(addr, &hello_packet.hostname, tx).unwrap();
+        let id = state.lock().await.distributor.add_client(addr, &hello_packet.hostname, tx).map_err(|e| {
+            io::Error::new(io::ErrorKind::Other, e)
+        })?;
 
         Ok(Client {
             frames,
             rx,
-            connection_type: ConnectionType::MCClient,
+            connection_type: ConnectionType::MCClient(MCClient::new(id, &hello_packet.hostname)),
         })
     }
     async fn new_proxy_client(
@@ -73,7 +72,7 @@ impl Client {
         Ok(Client {
             frames,
             rx,
-            connection_type: ConnectionType::ProxyClient,
+            connection_type: ConnectionType::ProxyClient(ProxyClient::new(server.to_string())),
         })
     }
 }
@@ -94,13 +93,20 @@ pub async fn process_socket_connection(
     tracing::info!("received new packet: {:?}", packet);
     let mut connection = match packet {
         SocketPacket::MCHelloPacket(packet) => {
-            let connection = Client::new_mc_client(state.clone(), frames, &packet).await?;
-            let proxy_packet = SocketPacket::ProxyDataPacket(ProxyDataPacket::from(packet));
+            let connection = Client::new_mc_client(state.clone(), frames, &packet).await.map_err(|e| {
+                tracing::error!("could'nt find server {}", e);
+                e
+            })?;
+            let hostname = packet.hostname.clone();
+            let client_id = connection.connection_type.get_mc().unwrap().id;
+            let mut proxy_packet = ProxyDataPacket::from(packet);
+            proxy_packet.client_id = client_id;
+            let packet = SocketPacket::ProxyDataPacket(proxy_packet);
             {
                 state
                     .lock()
                     .await.distributor
-                    .send_to_server("localhost", &proxy_packet);
+                    .send_to_server(&hostname, &packet);
             }
 
             //state.lock().await.send_to_server("localhost".to_string(), &bufmut).await;
@@ -127,20 +133,24 @@ pub async fn process_socket_connection(
                 Some(Ok(msg)) => {
                     match msg {
                         SocketPacket::MCDataPacket(packet) => {
-                            let proxy_packet = SocketPacket::ProxyDataPacket(ProxyDataPacket::from(packet));
+                            let connection_config = connection.connection_type.get_mc().unwrap();
+                            let mut proxy_packet = ProxyDataPacket::from(packet);
+                            proxy_packet.client_id = connection_config.id;
+                            let packet = SocketPacket::ProxyDataPacket(proxy_packet);
                             {
                                 state
                                     .lock()
                                     .await.distributor
-                                    .send_to_server("localhost", &proxy_packet);
+                                    .send_to_server(&connection_config.hostname, &packet);
                             }
                         }
                         SocketPacket::ProxyDataPacket(packet) => {
-                            // todo verify if this is really a proxy
+                            let client_id = packet.client_id;
                             let mc_packet = SocketPacket::MCDataPacket(MinecraftDataPacket::from(packet));
+                            let host = &connection.connection_type.get_proxy().unwrap().hostname;
                             {
                                 state.lock().await.distributor
-                                .send_to_client("localhost", &mc_packet);
+                                .send_to_client(host, client_id, &mc_packet);
                             }
                         }
                         packet => {
@@ -160,11 +170,11 @@ pub async fn process_socket_connection(
             },
         }
     }
-    if let ConnectionType::MCClient = connection.connection_type {
+    if let ConnectionType::MCClient(config) = &connection.connection_type {
         tracing::info!("removing Minecraft client {addr} from state");
         state.lock().await.distributor.remove_client(&addr);
     }
-    if let ConnectionType::ProxyClient = connection.connection_type {
+    if let ConnectionType::ProxyClient(config) = &connection.connection_type {
         tracing::info!("removing Proxy {addr} from state");
         state.lock().await.distributor.remove_server("localhost");
     }
@@ -172,8 +182,52 @@ pub async fn process_socket_connection(
 }
 
 #[derive(Debug)]
+pub struct MCClient {
+    id: u16,
+    hostname: String,
+}
+
+impl MCClient {
+    pub fn new(id: u16, hostname: &str) -> Self {
+        MCClient { id, hostname: hostname.to_string() }
+    }
+}
+
+#[derive(Debug)]
+pub struct ProxyClient {
+    hostname: String,
+}
+
+impl ProxyClient {
+    pub fn new(hostname: String) -> Self {
+        ProxyClient { hostname }
+    }
+}
+
+#[derive(Debug)]
 pub enum ConnectionType {
     Unknown,
-    MCClient,
-    ProxyClient,
+    MCClient(MCClient),
+    ProxyClient(ProxyClient),
+}
+
+impl Default for ConnectionType {
+    fn default() -> Self {
+        ConnectionType::Unknown
+    }
+}
+
+impl ConnectionType {
+    pub fn get_mc(&self) -> Option<&MCClient> {
+        match self {
+            ConnectionType::MCClient(e) => Some(e),
+            _ => None,
+        }
+    }
+    pub fn get_proxy(&self) -> Option<&ProxyClient> {
+        match self {
+            ConnectionType::ProxyClient(e) => Some(e),
+            _ => None,
+        }
+    }
 }
