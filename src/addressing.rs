@@ -3,8 +3,10 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use thiserror::Error;
 use tokio::sync::mpsc;
+use crate::socket_packet::SocketPacket;
 
-type Tx = mpsc::UnboundedSender<BytesMut>;
+pub type Tx = mpsc::UnboundedSender<SocketPacket>;
+pub type Rx = mpsc::UnboundedReceiver<SocketPacket>;
 
 #[derive(Debug, Error)]
 pub enum DistributorError {
@@ -96,16 +98,16 @@ impl Distributor {
         self.server_clients.remove(hostname);
     }
 
-    async fn send_to_server(&mut self, server: String, buf: &BytesMut) {
+    async fn send_to_server(&mut self, server: String, packet: SocketPacket) {
         for peer in self.servers.iter_mut() {
-            tracing::info!("MC -> Server {}", buf.len());
+            tracing::info!("MC -> Server");
             if *peer.0 == server {
-                let _ = peer.1.send(buf.clone());
+                let _ = peer.1.send(packet.clone());
             }
         }
     }
 
-    async fn send_to_client(&mut self, client: String, buf: &BytesMut) {
+    async fn send_to_client(&mut self, client: String, buf: SocketPacket) {
         for peer in self.clients.iter_mut() {
             //if *peer.0 == client {
             //let _ = peer.1.send(buf.clone());

@@ -3,7 +3,6 @@ use std::error::Error;
 use std::io;
 use std::sync::Arc;
 
-use bytes::BytesMut;
 use futures::SinkExt;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
@@ -12,8 +11,8 @@ use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 
 use tracing;
-
-use crate::minecraft::{MinecraftHelloPacket, MinecraftDataPacket};
+use crate::addressing::{Rx, Tx};
+use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
 use crate::packet_codec::PacketCodec;
 use crate::proxy::ProxyDataPacket;
 use crate::socket_packet::SocketPacket;
@@ -22,9 +21,6 @@ pub struct Shared {
     pub clients: HashMap<SocketAddr, Tx>,
     pub servers: HashMap<String, Tx>,
 }
-
-type Tx = mpsc::UnboundedSender<SocketPacket>;
-type Rx = mpsc::UnboundedReceiver<SocketPacket>;
 
 /// The state for each connected client.
 struct Client {
@@ -69,10 +65,7 @@ impl Client {
         // Get the client socket address
         let addr = frames.get_ref().peer_addr()?;
 
-        // Create a channel for this peer
         let (tx, rx) = mpsc::unbounded_channel();
-
-        // Add an entry for this `Peer` in the shared state map.
 
         state.lock().await.clients.insert(addr, tx);
 
@@ -87,13 +80,9 @@ impl Client {
         frames: Framed<TcpStream, PacketCodec>,
         server: &str,
     ) -> io::Result<Client> {
-        // Get the client socket address
         let addr = frames.get_ref().peer_addr()?;
 
-        // Create a channel for this peer
         let (tx, rx) = mpsc::unbounded_channel();
-
-        // Add an entry for this `Peer` in the shared state map.
 
         state.lock().await.servers.insert(server.to_string(), tx);
 
@@ -105,6 +94,10 @@ impl Client {
     }
 }
 
+/// This function handles the connection to one client
+/// it decides if the client is a minecraft client or a proxy client
+/// forwards the traffic to the other side
+/// encapsulates/decapsulates the packets
 pub async fn process_socket_connection(
     socket: TcpStream,
     addr: SocketAddr,
@@ -174,10 +167,7 @@ pub async fn process_socket_connection(
                 }
                 // An error occurred.
                 Some(Err(e)) => {
-                    tracing::error!(
-                        "an error occurred while processing messages for error = {:?}",
-                        e
-                    );
+                    tracing::error!("Error while receiving: {:?}", e);
                 }
                 // The stream has been exhausted.
                 None => {
