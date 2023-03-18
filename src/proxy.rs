@@ -21,6 +21,26 @@ pub struct ProxyDataPacket {
     pub data: Vec<u8>,
 }
 
+impl ProxyDataPacket {
+    pub fn from_mc_packet(packet: MinecraftDataPacket, client_id: u16) -> Self {
+        ProxyDataPacket {
+            length: packet.length,
+            client_id,
+            data: packet.data,
+        }
+    }
+}
+
+impl ProxyDataPacket {
+    pub fn from_mc_hello_packet(packet: MinecraftHelloPacket, client_id: u16) -> Self {
+        ProxyDataPacket {
+            length: packet.length,
+            client_id,
+            data: packet.data,
+        }
+    }
+}
+
 impl From<MinecraftHelloPacket> for ProxyDataPacket {
     fn from(packet: MinecraftHelloPacket) -> Self {
         ProxyDataPacket {

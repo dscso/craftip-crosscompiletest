@@ -65,11 +65,11 @@ impl Decoder for PacketCodec {
                 let result = SocketPacket::parse_first_package(buf);
                 match result.as_ref() {
                     Ok(SocketPacket::ProxyHelloPacket(pkg)) => {
-                        tracing::info!("::::::::::::: Changing connection to proxy protocol version {} ::::::::::::::", pkg.version);
+                        tracing::debug!("::::::::::::: Changing connection to proxy protocol version {} ::::::::::::::", pkg.version);
                         self.protocol = Protocol::Proxy(pkg.version as u32);
                     }
                     Ok(SocketPacket::MCHelloPacket(pkg)) => {
-                        tracing::info!("::::::::::::: Changing connection to MC protocol version {} ::::::::::::::", pkg.version);
+                        tracing::debug!("::::::::::::: Changing connection to MC protocol version {} ::::::::::::::", pkg.version);
                         self.protocol = Protocol::MC(pkg.version as u32);
                     }
                     _ => {

@@ -1,20 +1,20 @@
 use std::error::Error;
-use std::io;
 use std::sync::Arc;
 
-use futures::SinkExt;
+use futures::{SinkExt, TryFutureExt};
 use std::net::SocketAddr;
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 
-use tracing;
-use crate::addressing::{Distributor, Rx};
+use crate::addressing::{Distributor, DistributorError, Rx};
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
 use crate::packet_codec::PacketCodec;
 use crate::proxy::ProxyDataPacket;
 use crate::socket_packet::SocketPacket;
+use tracing;
 
 pub struct Shared {
     pub distributor: Distributor,
@@ -27,9 +27,23 @@ struct Client {
     connection_type: ConnectionType,
 }
 
+impl Client {
+    fn new(
+        frames: Framed<TcpStream, PacketCodec>,
+        rx: Rx,
+        connection_type: ConnectionType,
+    ) -> Client {
+        Client {
+            frames,
+            rx,
+            connection_type,
+        }
+    }
+}
+
 impl Shared {
     /// Create a new, empty, instance of `Shared`.
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Shared {
             distributor: Distributor::new(),
         }
@@ -42,38 +56,41 @@ impl Client {
         state: Arc<Mutex<Shared>>,
         frames: Framed<TcpStream, PacketCodec>,
         hello_packet: &MinecraftHelloPacket,
-    ) -> io::Result<Client> {
+    ) -> Result<Client, DistributorError> {
         // Get the client socket address
-        let addr = frames.get_ref().peer_addr()?;
+        let addr = frames.get_ref().peer_addr().map_err(|e| {
+            tracing::error!("could not get peer address, {}", e);
+            DistributorError::UnknownError
+        })?;
 
         let (tx, rx) = mpsc::unbounded_channel();
 
-        let id = state.lock().await.distributor.add_client(addr, &hello_packet.hostname, tx).map_err(|e| {
-            io::Error::new(io::ErrorKind::Other, e)
-        })?;
+        let id = state
+            .lock()
+            .await
+            .distributor
+            .add_client(addr, &hello_packet.hostname, tx)?;
 
-        Ok(Client {
+        tracing::info!("added client with id: {}", id);
+        Ok(Client::new(
             frames,
             rx,
-            connection_type: ConnectionType::MCClient(MCClient::new(id, &hello_packet.hostname)),
-        })
+            ConnectionType::MCClient(MCClient::new(id, &hello_packet.hostname)),
+        ))
     }
     async fn new_proxy_client(
         state: Arc<Mutex<Shared>>,
         frames: Framed<TcpStream, PacketCodec>,
         server: &str,
-    ) -> io::Result<Client> {
-        let addr = frames.get_ref().peer_addr()?;
-
+    ) -> Result<Client, DistributorError> {
         let (tx, rx) = mpsc::unbounded_channel();
+        state.lock().await.distributor.add_server(server, tx)?;
 
-        state.lock().await.distributor.add_server(server, tx).unwrap();
-
-        Ok(Client {
+        Ok(Client::new(
             frames,
             rx,
-            connection_type: ConnectionType::ProxyClient(ProxyClient::new(server.to_string())),
-        })
+            ConnectionType::ProxyClient(ProxyClient::new(server.to_string())),
+        ))
     }
 }
 
@@ -93,27 +110,40 @@ pub async fn process_socket_connection(
     tracing::info!("received new packet: {:?}", packet);
     let mut connection = match packet {
         SocketPacket::MCHelloPacket(packet) => {
-            let connection = Client::new_mc_client(state.clone(), frames, &packet).await.map_err(|e| {
-                tracing::error!("could'nt find server {}", e);
-                e
-            })?;
+            let mut connection = match Client::new_mc_client(state.clone(), frames, &packet).await {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::error!("error while adding MC client! {}", e);
+                    return Ok(());
+                }
+            };
             let hostname = packet.hostname.clone();
-            let client_id = connection.connection_type.get_mc().unwrap().id;
-            let mut proxy_packet = ProxyDataPacket::from(packet);
-            proxy_packet.client_id = client_id;
-            let packet = SocketPacket::ProxyDataPacket(proxy_packet);
+            let client_id = connection.connection_type.get_mc().id;
+            let mut packet = ProxyDataPacket::from_mc_hello_packet(packet, client_id);
+            packet.client_id = client_id;
+            let packet = SocketPacket::ProxyDataPacket(packet);
+            if let Err(err) = state
+                .lock()
+                .await
+                .distributor
+                .send_to_server(&hostname, &packet)
             {
-                state
-                    .lock()
-                    .await.distributor
-                    .send_to_server(&hostname, &packet);
+                tracing::error!("could not send first packet to proxy {}", err);
+                let _ = connection.frames.get_mut().shutdown().map_err(|e| {
+                    tracing::error!("could not shutdown socket {}", e);
+                });
             }
 
-            //state.lock().await.send_to_server("localhost".to_string(), &bufmut).await;
             connection
         }
-        SocketPacket::ProxyHelloPacket(hello_pkg) => {
-            Client::new_proxy_client(state.clone(), frames, &hello_pkg.hostname).await?
+        SocketPacket::ProxyHelloPacket(packet) => {
+            match Client::new_proxy_client(state.clone(), frames, &packet.hostname).await {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::error!("could not add new proxy! {}", e);
+                    return Ok(());
+                }
+            }
         }
         _ => {
             tracing::error!("Unknown protocol");
@@ -133,24 +163,26 @@ pub async fn process_socket_connection(
                 Some(Ok(msg)) => {
                     match msg {
                         SocketPacket::MCDataPacket(packet) => {
-                            let connection_config = connection.connection_type.get_mc().unwrap();
-                            let mut proxy_packet = ProxyDataPacket::from(packet);
-                            proxy_packet.client_id = connection_config.id;
-                            let packet = SocketPacket::ProxyDataPacket(proxy_packet);
+                            let connection_config = connection.connection_type.get_mc();
+                            let packet = SocketPacket::from(ProxyDataPacket::from_mc_packet(packet, connection_config.id));
+
+                            if let Err(err) = state
+                                .lock()
+                                .await.distributor
+                                .send_to_server(&connection_config.hostname, &packet)
                             {
-                                state
-                                    .lock()
-                                    .await.distributor
-                                    .send_to_server(&connection_config.hostname, &packet);
+                                tracing::error!("could not send to server {}", err);
+                                break;
                             }
                         }
                         SocketPacket::ProxyDataPacket(packet) => {
                             let client_id = packet.client_id;
                             let mc_packet = SocketPacket::MCDataPacket(MinecraftDataPacket::from(packet));
-                            let host = &connection.connection_type.get_proxy().unwrap().hostname;
-                            {
-                                state.lock().await.distributor
-                                .send_to_client(host, client_id, &mc_packet);
+                            let host = &connection.connection_type.get_proxy().hostname;
+                            if let Err(err) = state.lock().await.distributor
+                                .send_to_client(host, client_id, &mc_packet) {
+                                tracing::error!("could not send to client {}", err);
+                                break;
                             }
                         }
                         packet => {
@@ -170,14 +202,31 @@ pub async fn process_socket_connection(
             },
         }
     }
-    if let ConnectionType::MCClient(config) = &connection.connection_type {
-        tracing::info!("removing Minecraft client {addr} from state");
-        state.lock().await.distributor.remove_client(&addr);
+
+    match &connection.connection_type {
+        ConnectionType::MCClient(config) => {
+            tracing::info!("removing Minecraft client {addr} from state");
+            if let Err(e) = state.lock().await.distributor.remove_client(&addr) {
+                tracing::error!("Error while removing mc client {}", e);
+            };
+        }
+        ConnectionType::ProxyClient(config) => {
+            tracing::info!("removing Proxy {addr} from state");
+            if let Err(e) = state
+                .lock()
+                .await
+                .distributor
+                .remove_server(&config.hostname)
+            {
+                tracing::error!("could not remove proxy: {}", e);
+                return Ok(());
+            }
+        }
+        _ => {
+            unimplemented!()
+        }
     }
-    if let ConnectionType::ProxyClient(config) = &connection.connection_type {
-        tracing::info!("removing Proxy {addr} from state");
-        state.lock().await.distributor.remove_server("localhost");
-    }
+
     Ok(())
 }
 
@@ -189,7 +238,10 @@ pub struct MCClient {
 
 impl MCClient {
     pub fn new(id: u16, hostname: &str) -> Self {
-        MCClient { id, hostname: hostname.to_string() }
+        MCClient {
+            id,
+            hostname: hostname.to_string(),
+        }
     }
 }
 
@@ -218,16 +270,23 @@ impl Default for ConnectionType {
 }
 
 impl ConnectionType {
-    pub fn get_mc(&self) -> Option<&MCClient> {
+    pub fn get_mc(&self) -> &MCClient {
         match self {
-            ConnectionType::MCClient(e) => Some(e),
-            _ => None,
+            ConnectionType::MCClient(e) => e,
+            _ => {
+                tracing::error!("not a mc client");
+                panic!("not a mc client")
+            }
         }
     }
-    pub fn get_proxy(&self) -> Option<&ProxyClient> {
+    pub fn get_proxy(&self) -> &ProxyClient {
         match self {
-            ConnectionType::ProxyClient(e) => Some(e),
-            _ => None,
+            ConnectionType::ProxyClient(e) => e,
+            _ => {
+                tracing::error!("not a proxy client");
+                panic!("not a proxy client")
+            }
         }
     }
+    pub fn send(packet: SocketPacket) {}
 }
