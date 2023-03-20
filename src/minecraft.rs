@@ -21,7 +21,7 @@ pub struct MinecraftHelloPacket {
     pub data: Vec<u8>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct MinecraftDataPacket {
     pub length: usize,
     pub data: Vec<u8>,

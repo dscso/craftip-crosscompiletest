@@ -1,11 +1,11 @@
-use crate::socket_packet::SocketPacket;
+use crate::socket_packet::{ChannelMessage, SocketPacket};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use thiserror::Error;
 use tokio::sync::mpsc;
 
-pub type Tx = mpsc::UnboundedSender<SocketPacket>;
-pub type Rx = mpsc::UnboundedReceiver<SocketPacket>;
+pub type Tx = mpsc::UnboundedSender<ChannelMessage<SocketPacket>>;
+pub type Rx = mpsc::UnboundedReceiver<ChannelMessage<SocketPacket>>;
 
 #[derive(Debug, Error)]
 pub enum DistributorError {
@@ -51,7 +51,7 @@ impl Distributor {
         tx: Tx,
     ) -> Result<u16, DistributorError> {
         self.clients.insert(addr, (tx, hostname.to_string()));
-        let mut id = 1;
+        let mut id = 0;
         for client in self
             .server_clients
             .get_mut(hostname)
@@ -109,7 +109,7 @@ impl Distributor {
                 if let Some(client) = client {
                     let (tx, _) = client;
                     // todo disconnect
-                    tx.send(SocketPacket::UnknownPacket)
+                    tx.send(ChannelMessage::Close)
                         .map_err(|_| (DistributorError::ClientNotFound))?;
                 }
             }
@@ -126,7 +126,7 @@ impl Distributor {
         for peer in self.servers.iter_mut() {
             tracing::debug!("MC -> Server");
             if *peer.0 == server {
-                let _ = peer.1.send(packet.clone());
+                let _ = peer.1.send(ChannelMessage::Packet(packet.clone()));
                 return Ok(());
             }
         }
@@ -139,17 +139,28 @@ impl Distributor {
         client_id: u16,
         packet: &SocketPacket,
     ) -> Result<(), DistributorError> {
+        let client = self.get_client(hostname, client_id)?;
+        tracing::debug!("MC -> Client");
+        if let Err(e) = client.send(ChannelMessage::Packet(packet.clone())) {
+            tracing::error!("could not send: {}", e);
+            return Err(DistributorError::UnknownError);
+        }
+        return Ok(());
+    }
+    pub fn get_client(
+        &mut self,
+        hostname: &str,
+        client_id: u16,
+    ) -> Result<&mut Tx, DistributorError> {
         match self.server_clients.get(hostname) {
             Some(clients) => {
                 if let Some(client) = clients.get(client_id as usize) {
                     if let Some(client) = client {
-                        let client = self.clients.get_mut(client).unwrap();
-                        tracing::debug!("MC -> Client");
-                        if let Err(e) = client.0.send(packet.clone()) {
-                            tracing::error!("could not send: {}", e);
-                            return Err(DistributorError::UnknownError);
-                        }
-                        return Ok(());
+                        let client = self
+                            .clients
+                            .get_mut(client)
+                            .expect("Error in distributor send_to_client");
+                        return Ok(&mut client.0);
                     }
                 }
                 Err(DistributorError::ClientNotFound)

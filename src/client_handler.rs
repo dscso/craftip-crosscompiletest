@@ -12,8 +12,8 @@ use tokio_util::codec::Framed;
 use crate::addressing::{Distributor, DistributorError, Rx};
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
 use crate::packet_codec::PacketCodec;
-use crate::proxy::ProxyDataPacket;
-use crate::socket_packet::SocketPacket;
+use crate::proxy::{ProxyClientJoinPacket, ProxyDataPacket};
+use crate::socket_packet::{ChannelMessage, SocketPacket};
 use tracing;
 
 pub struct Shared {
@@ -118,6 +118,22 @@ pub async fn process_socket_connection(
                 }
             };
             let hostname = packet.hostname.clone();
+            let client_join_packet = ProxyClientJoinPacket {
+                length: 0,
+                client_id: connection.connection_type.get_mc().id,
+            };
+            if let Err(err) = state
+                .lock()
+                .await
+                .distributor
+                .send_to_server(&hostname, &SocketPacket::from(client_join_packet))
+            {
+                tracing::error!("could not send first packet to proxy {}", err);
+                let _ = connection.frames.get_mut().shutdown().map_err(|e| {
+                    tracing::error!("could not shutdown socket {}", e);
+                });
+            }
+
             let client_id = connection.connection_type.get_mc().id;
             let mut packet = ProxyDataPacket::from_mc_hello_packet(packet, client_id);
             packet.client_id = client_id;
@@ -155,9 +171,18 @@ pub async fn process_socket_connection(
     loop {
         tokio::select! {
             // A message was received from a peer. Send it to the current user.
-            Some(pkg) = connection.rx.recv() => {
-                //tracing::info!("Sending packet to client: {:?}", pkg);
-                connection.frames.send(pkg).await?;
+            result = connection.rx.recv() => {
+                match result {
+                    Some(ChannelMessage::Packet(pkg)) => {
+                        tracing::info!("Sending packet to client: {:?}", pkg);
+                        connection.frames.send(pkg).await?;
+                    }
+                    _ => {
+                        // either the channel was closed or the other side closed the channel
+                        tracing::info!("connection closed by another side of unbound channel");
+                        break;
+                    }
+                }
             }
             result = connection.frames.next() => match result {
                 Some(Ok(msg)) => {
@@ -175,6 +200,19 @@ pub async fn process_socket_connection(
                                 break;
                             }
                         }
+                        SocketPacket::ProxyDisconnectPacket(packet) => {
+                            // todo!
+                            tracing::info!("Received proxy disconnect packet: {:?}", packet);
+                            match state.lock().await.distributor.get_client(&connection.connection_type.get_proxy().hostname, packet.client_id) {
+                                Ok(client) => {
+                                    client.send(ChannelMessage::Packet(SocketPacket::UnknownPacket));
+                                }
+                                Err(e) => {
+                                    tracing::error!("could not find client with id {}, {}", packet.client_id, e);
+                                    break;
+                                }
+                            }
+                        }
                         SocketPacket::ProxyDataPacket(packet) => {
                             let client_id = packet.client_id;
                             let mc_packet = SocketPacket::MCDataPacket(MinecraftDataPacket::from(packet));
@@ -182,7 +220,8 @@ pub async fn process_socket_connection(
                             if let Err(err) = state.lock().await.distributor
                                 .send_to_client(host, client_id, &mc_packet) {
                                 tracing::error!("could not send to client {}", err);
-                                break;
+                                // todo add this later!
+                                //break;
                             }
                         }
                         packet => {

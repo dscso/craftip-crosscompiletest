@@ -7,14 +7,17 @@ use std::io::Write;
 use std::mem::size_of;
 
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
-use crate::proxy::{ProxyClientJoinPacket, ProxyDataPacket, ProxyHelloPacket};
+use crate::proxy::{
+    ProxyClientDisconnectPacket, ProxyClientJoinPacket, ProxyDataPacket, ProxyHelloPacket,
+};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub enum SocketPacket {
     MCHelloPacket(MinecraftHelloPacket),
     MCDataPacket(MinecraftDataPacket),
     ProxyHelloPacket(ProxyHelloPacket),
     ProxyJoinPacket(ProxyClientJoinPacket),
+    ProxyDisconnectPacket(ProxyClientDisconnectPacket),
     ProxyDataPacket(ProxyDataPacket),
     UnknownPacket,
 }
@@ -40,6 +43,12 @@ impl From<ProxyHelloPacket> for SocketPacket {
 impl From<ProxyClientJoinPacket> for SocketPacket {
     fn from(packet: ProxyClientJoinPacket) -> Self {
         SocketPacket::ProxyJoinPacket(packet)
+    }
+}
+
+impl From<ProxyClientDisconnectPacket> for SocketPacket {
+    fn from(packet: ProxyClientDisconnectPacket) -> Self {
+        SocketPacket::ProxyDisconnectPacket(packet)
     }
 }
 
@@ -110,4 +119,10 @@ impl SocketPacket {
             }
         }
     }
+}
+
+#[derive(Debug)]
+pub enum ChannelMessage<T> {
+    Packet(T),
+    Close,
 }
