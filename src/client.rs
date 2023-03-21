@@ -9,6 +9,7 @@ use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
+use tracing::trace;
 
 mod cursor;
 mod datatypes;
@@ -39,13 +40,23 @@ impl Shared {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    let subscriber = tracing_subscriber::fmt()
+        .compact()
+        .with_file(true)
+        .with_line_number(true)
+        .with_thread_ids(false)
+        .with_target(false)
+        .finish();
+
+    tracing::subscriber::set_global_default(subscriber)?;
+
     // Connect to server 1
     let server1_addr = "127.0.0.1:25565";
     let mut proxy_stream = TcpStream::connect(server1_addr).await?;
 
     // Connect to server 2
     let mc_server_addr = "127.0.0.1:25564";
-    let mut proxy = Framed::new(proxy_stream, PacketCodec::new(1024 * 8));
+    let mut proxy = Framed::new(proxy_stream, PacketCodec::new(1024 * 4));
 
     let hello = SocketPacket::from(SocketPacket::ProxyHelloPacket(proxy::ProxyHelloPacket {
         length: 0,
@@ -53,7 +64,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         hostname: "localhost".to_string(),
     }));
     proxy.send(hello).await?;
-    println!("Sent hello packet");
+    tracing::info!("Sent hello packet");
     let (tx, mut rx) = mpsc::unbounded_channel();
     let state = Arc::new(Mutex::new(Shared::new()));
     loop {
@@ -73,7 +84,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
             result = proxy.next() => match result {
                 Some(Ok(msg)) => {
-                    println!("received message from server 1: {:?}", msg);
+                    tracing::info!("received message from server 1: {:?}", msg);
                     match msg {
                         SocketPacket::ProxyJoinPacket(packet) => {
                             let (client_tx, client_rx) = mpsc::unbounded_channel();
@@ -83,7 +94,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             let tx_clone = tx.clone();
                             let state_clone = state.clone();
                             tokio::spawn(async move {
-                                handle_client(tx_clone, client_rx, mc_server_addr, packet.client_id, state_clone).await.expect("TODO: panic message");
+                                if let Err(e) = handle_client(tx_clone, client_rx, mc_server_addr, packet.client_id, state_clone).await {
+                                    panic!("An Error occured in the handle_client function: {}", e);
+                                }
                             });
                         }
                         SocketPacket::ProxyDataPacket(packet) => {
@@ -92,7 +105,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     tx.send(ChannelMessage::Packet(packet.data.to_vec()))?;
                                 }
                                 None => {
-                                    println!("error could not minecraft client")
+                                    tracing::error!("connection to minecraft server not found!");
                                 }
 
                             }
@@ -103,7 +116,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     tx.send(ChannelMessage::Close)?;
                                 }
                                 None => {
-                                    println!("error could not minecraft client")
+                                    tracing::debug!("connection already closed!")
                                 }
 
                             }
@@ -122,7 +135,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
                 // The stream has been exhausted.
                 None => {
-                    println!("Proxy has closed the connection");
+                    tracing::info!("Proxy has closed the connection");
                     break
                 },
             },
@@ -139,7 +152,7 @@ async fn handle_client(
     client_id: u16,
     state: Arc<Mutex<Shared>>,
 ) -> Result<(), Box<dyn Error>> {
-    println!("opening new client with id {}", client_id);
+    tracing::info!("opening new client with id {}", client_id);
     // connect to server
     let mut buf = [0; 1024];
     let mut mc_server = TcpStream::connect(mc_server_addr).await?;
@@ -159,10 +172,10 @@ async fn handle_client(
             n = mc_server.read(&mut buf) => {
                 let n = n?;
                 if n == 0 {
-                    println!("MC has closed the connection");
+                    tracing::info!("Minecraft server closed connection!");
                     break; // server 2 has closed the connection
                 }
-                println!("received message from server 2: {:?}", &buf[0..n]);
+                tracing::debug!("recv pkg from mc srv len: {}", n);
                 // encapsulate in ProxyDataPacket
                 let packet = SocketPacket::from(proxy::ProxyDataPacket {
                     data: buf[0..n].to_vec(),
@@ -170,13 +183,11 @@ async fn handle_client(
                     length: n as usize,
                 });
 
-                println!("sending {:?}", packet);
                 tx.send(ChannelMessage::Packet(packet))?;
             }
         }
-        println!("clonsing new client with id {}", client_id);
     }
-    rx.close();
+    tracing::trace!("closing client connection");
 
     let packet = SocketPacket::from(proxy::ProxyClientDisconnectPacket {
         length: 0,

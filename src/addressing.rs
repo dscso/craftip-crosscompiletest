@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use thiserror::Error;
 use tokio::sync::mpsc;
+use tracing::trace;
 
 pub type Tx = mpsc::UnboundedSender<ChannelMessage<SocketPacket>>;
 pub type Rx = mpsc::UnboundedReceiver<ChannelMessage<SocketPacket>>;
@@ -27,11 +28,13 @@ pub enum DistributorError {
     UnknownError,
 }
 
+type ServerHostname = String;
+
+#[derive(Debug)]
 pub struct Distributor {
-    pub clients: HashMap<SocketAddr, (Tx, String)>,
-    pub servers: HashMap<String, Tx>,
-    pub clients_server: HashMap<SocketAddr, String>,
-    pub server_clients: HashMap<String, Vec<Option<SocketAddr>>>,
+    pub clients: HashMap<SocketAddr, (Tx, ServerHostname)>,
+    pub servers: HashMap<ServerHostname, Tx>,
+    pub server_clients: HashMap<ServerHostname, Vec<Option<SocketAddr>>>,
 }
 
 impl Distributor {
@@ -39,7 +42,6 @@ impl Distributor {
         Distributor {
             clients: HashMap::new(),
             servers: HashMap::new(),
-            clients_server: HashMap::new(),
             server_clients: HashMap::new(),
         }
     }
@@ -50,7 +52,6 @@ impl Distributor {
         hostname: &str,
         tx: Tx,
     ) -> Result<u16, DistributorError> {
-        self.clients.insert(addr, (tx, hostname.to_string()));
         let mut id = 0;
         for client in self
             .server_clients
@@ -59,6 +60,8 @@ impl Distributor {
         {
             if client.is_none() {
                 *client = Some(addr);
+                // if everything worked, add client and return OK
+                self.clients.insert(addr, (tx, hostname.to_string()));
                 return Ok(id);
             }
             id += 1;
@@ -81,7 +84,6 @@ impl Distributor {
             .clients
             .remove(&addr)
             .ok_or(DistributorError::ClientNotFound)?;
-        let mut id = 0;
         for client in self
             .server_clients
             .get_mut(&hostname)
@@ -89,9 +91,9 @@ impl Distributor {
         {
             if *client == Some(*addr) {
                 *client = None;
+                println!("Removed Client from distributor");
                 return Ok(());
             }
-            id += 1;
         }
         Err(DistributorError::ClientNotFound)
     }

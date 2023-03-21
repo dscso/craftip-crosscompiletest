@@ -104,6 +104,7 @@ pub async fn process_socket_connection(
     state: Arc<Mutex<Shared>>,
 ) -> Result<(), Box<dyn Error>> {
     tracing::info!("new connection from: {}", addr);
+    tracing::info!("distributor: {:?}", state.lock().await.distributor);
     let mut frames = Framed::new(socket, PacketCodec::new(1024 * 8));
     // In a loop, read data from the socket and write the data back.
     let packet = frames.next().await.ok_or("No first packet received")??;
@@ -117,6 +118,7 @@ pub async fn process_socket_connection(
                     return Ok(());
                 }
             };
+            // telling proxy client that there is a new client
             let hostname = packet.hostname.clone();
             let client_join_packet = ProxyClientJoinPacket {
                 length: 0,
@@ -174,7 +176,6 @@ pub async fn process_socket_connection(
             result = connection.rx.recv() => {
                 match result {
                     Some(ChannelMessage::Packet(pkg)) => {
-                        tracing::info!("Sending packet to client: {:?}", pkg);
                         connection.frames.send(pkg).await?;
                     }
                     _ => {
@@ -266,7 +267,6 @@ pub async fn process_socket_connection(
         }
         ConnectionType::ProxyClient(config) => {
             tracing::info!("removing Proxy {addr} from state");
-            // todo disconnect clients
             if let Err(e) = state
                 .lock()
                 .await
