@@ -39,11 +39,11 @@ impl ProxyDataPacket {
 }
 
 impl ProxyDataPacket {
-    pub fn from_mc_hello_packet(packet: MinecraftHelloPacket, client_id: u16) -> Self {
+    pub fn from_mc_hello_packet(packet: &MinecraftHelloPacket, client_id: u16) -> Self {
         ProxyDataPacket {
             length: packet.length,
             client_id,
-            data: packet.data,
+            data: packet.data.clone(),
         }
     }
 }
@@ -64,6 +64,26 @@ impl From<MinecraftDataPacket> for ProxyDataPacket {
             length: packet.length,
             client_id: 0,
             data: packet.data,
+        }
+    }
+}
+
+/// ProxyClientJoinPacket constructor
+impl ProxyClientJoinPacket {
+    pub fn new(client_id: u16) -> Self {
+        ProxyClientJoinPacket {
+            length: 0,
+            client_id,
+        }
+    }
+}
+
+/// ProxyClientDisconnectPacket constructor
+impl ProxyClientDisconnectPacket {
+    pub fn new(client_id: u16) -> Self {
+        ProxyClientDisconnectPacket {
+            length: 0,
+            client_id,
         }
     }
 }

@@ -123,12 +123,12 @@ impl Distributor {
     pub fn send_to_server(
         &mut self,
         server: &str,
-        packet: &SocketPacket,
+        packet: SocketPacket,
     ) -> Result<(), DistributorError> {
         for peer in self.servers.iter_mut() {
             tracing::debug!("MC -> Server");
             if *peer.0 == server {
-                let _ = peer.1.send(ChannelMessage::Packet(packet.clone()));
+                let _ = peer.1.send(ChannelMessage::Packet(packet));
                 return Ok(());
             }
         }
