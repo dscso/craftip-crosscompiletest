@@ -12,7 +12,7 @@ use tokio_util::codec::Framed;
 use crate::addressing::{Distributor, DistributorError, Rx};
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
 use crate::packet_codec::PacketCodec;
-use crate::proxy::{ProxyClientJoinPacket, ProxyDataPacket};
+use crate::proxy::{ProxyClientDisconnectPacket, ProxyClientJoinPacket, ProxyDataPacket};
 use crate::socket_packet::{ChannelMessage, SocketPacket};
 use tracing;
 
@@ -201,14 +201,17 @@ pub async fn process_socket_connection(
                             }
                         }
                         SocketPacket::ProxyDisconnectPacket(packet) => {
-                            // todo!
                             tracing::info!("Received proxy disconnect packet: {:?}", packet);
                             match state.lock().await.distributor.get_client(&connection.connection_type.get_proxy().hostname, packet.client_id) {
                                 Ok(client) => {
-                                    client.send(ChannelMessage::Packet(SocketPacket::UnknownPacket));
+                                    if let Err(e) = client.send(ChannelMessage::Close) {
+                                        tracing::error!("could not send close to client {}", e);
+                                        break;
+                                    }
                                 }
+                                Err(DistributorError::ClientNotFound) =>{},
                                 Err(e) => {
-                                    tracing::error!("could not find client with id {}, {}", packet.client_id, e);
+                                    tracing::warn!("could not disconnect client {}, {}", packet.client_id, e);
                                     break;
                                 }
                             }
@@ -220,8 +223,7 @@ pub async fn process_socket_connection(
                             if let Err(err) = state.lock().await.distributor
                                 .send_to_client(host, client_id, &mc_packet) {
                                 tracing::error!("could not send to client {}", err);
-                                // todo add this later!
-                                //break;
+                                break;
                             }
                         }
                         packet => {
@@ -245,12 +247,26 @@ pub async fn process_socket_connection(
     match &connection.connection_type {
         ConnectionType::MCClient(config) => {
             tracing::info!("removing Minecraft client {addr} from state");
+            let disconnect_packet = SocketPacket::from(ProxyClientDisconnectPacket {
+                length: 0,
+                client_id: config.id,
+            });
+            if let Err(err) = state
+                .lock()
+                .await
+                .distributor
+                .send_to_server(&config.hostname, &disconnect_packet)
+            {
+                tracing::error!("could not send disconnect packet to proxy {}", err);
+            }
+
             if let Err(e) = state.lock().await.distributor.remove_client(&addr) {
                 tracing::error!("Error while removing mc client {}", e);
             };
         }
         ConnectionType::ProxyClient(config) => {
             tracing::info!("removing Proxy {addr} from state");
+            // todo disconnect clients
             if let Err(e) = state
                 .lock()
                 .await

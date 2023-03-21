@@ -97,6 +97,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                             }
                         }
+                        SocketPacket::ProxyDisconnectPacket(packet) => {
+                            match state.lock().await.connections.get(&packet.client_id) {
+                                Some(tx) => {
+                                    tx.send(ChannelMessage::Close)?;
+                                }
+                                None => {
+                                    println!("error could not minecraft client")
+                                }
+
+                            }
+                        }
                         _ => {
                             unimplemented!("Message not implemented!")
                         }
