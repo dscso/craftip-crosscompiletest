@@ -201,7 +201,7 @@ pub async fn process_socket_connection(
             },
         }
     }
-
+    // Handle disconnect of client
     match &connection.connection_type {
         ConnectionType::MCClient(config) => {
             tracing::info!("removing Minecraft client {addr} from state");

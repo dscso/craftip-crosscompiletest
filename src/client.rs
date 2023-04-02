@@ -9,7 +9,6 @@ use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
-use tracing::trace;
 
 mod cursor;
 mod datatypes;
@@ -58,11 +57,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mc_server_addr = "127.0.0.1:25564";
     let mut proxy = Framed::new(proxy_stream, PacketCodec::new(1024 * 4));
 
-    let hello = SocketPacket::from(SocketPacket::ProxyHelloPacket(proxy::ProxyHelloPacket {
+    let hello = SocketPacket::from(proxy::ProxyHelloPacket {
         length: 0,
         version: 123,
-        hostname: "localhost".to_string(),
-    }));
+        hostname: "myserver".to_string(),
+    });
     proxy.send(hello).await?;
     tracing::info!("Sent hello packet");
     let (tx, mut rx) = mpsc::unbounded_channel();
@@ -179,7 +178,7 @@ async fn handle_client(
                 // encapsulate in ProxyDataPacket
                 let packet = SocketPacket::from(proxy::ProxyDataPacket {
                     data: buf[0..n].to_vec(),
-                    client_id: client_id,
+                    client_id,
                     length: n as usize,
                 });
 
