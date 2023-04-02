@@ -1,4 +1,5 @@
 use eframe::egui;
+use eframe::egui::{Align2, Ui, Window};
 
 /// Password entry field with ability to toggle character hiding.
 ///
@@ -36,4 +37,27 @@ pub fn password(password: &mut String) -> impl egui::Widget + '_ {
         // (hovered, clicked, …) and maybe show a tooltip:
         result.response
     }
+}
+
+
+
+pub fn popup(
+    ctx: &egui::Context,
+    title: &str,
+    open: &mut bool,
+    add_contents: impl FnOnce(&mut Ui),
+) {
+    ctx.input(|e| {
+        if e.key_pressed(egui::Key::Escape) {
+            *open = false;
+        }
+    });
+    Window::new(title)
+        .resizable(false)
+        .collapsible(false)
+        .movable(false)
+        .open(open)
+        //.fixed_size(egui::vec2(200.0, 300.0))
+        .anchor(Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+        .show(ctx, add_contents);
 }

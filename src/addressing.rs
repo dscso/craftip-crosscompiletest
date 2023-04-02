@@ -109,7 +109,6 @@ impl Distributor {
                     .remove(client.as_ref().ok_or(DistributorError::ClientNotFound)?);
                 if let Some(client) = client {
                     let (tx, _) = client;
-                    // todo disconnect
                     tx.send(ChannelMessage::Close)
                         .map_err(|_| (DistributorError::ClientNotFound))?;
                 }
