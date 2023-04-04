@@ -13,15 +13,33 @@ use crate::packet_codec::PacketCodec;
 use crate::proxy;
 use crate::socket_packet::{ChannelMessage, SocketPacket};
 
+#[derive(Debug)]
+pub enum Stats {
+    Connected,
+    ClientsConnected(u16),
+    Disconnected,
+}
+
+#[derive(Debug)]
+pub enum Control {
+    Disconnect,
+}
 
 pub type Tx = mpsc::UnboundedSender<ChannelMessage<SocketPacket>>;
 pub type Rx = mpsc::UnboundedReceiver<ChannelMessage<SocketPacket>>;
 
-#[derive(Clone)]
+pub type ControlTx = mpsc::UnboundedSender<Control>;
+pub type ControlRx = mpsc::UnboundedReceiver<Control>;
+
+pub type StatsTx = mpsc::UnboundedSender<Stats>;
+pub type StatsRx = mpsc::UnboundedReceiver<Stats>;
+
 pub struct Client {
     proxy_server: String,
     mc_server: String,
     state: Arc<Mutex<Shared>>,
+    control_rx: ControlRx,
+    stats_tx: StatsTx,
 }
 
 
@@ -39,10 +57,12 @@ impl Shared {
 }
 
 impl Client {
-    pub fn new(proxy_server: String, mc_server: String) -> Self {
+    pub fn new(proxy_server: String, mc_server: String, control_rx: ControlRx, stats_tx: StatsTx) -> Self {
         Client {
             proxy_server,
             mc_server,
+            control_rx,
+            stats_tx,
             state: Arc::new(Mutex::new(Shared::new())),
         }
     }
@@ -66,6 +86,18 @@ impl Client {
         loop {
             // Read from server 1
             tokio::select! {
+                result = self.control_rx.recv() => {
+                    match result {
+                        Some(Control::Disconnect) => {
+                            tracing::info!("Disconnecting from proxy server");
+                            break;
+                        }
+                        None => {
+                            tracing::info!("Control channel closed");
+                            break;
+                        }
+                    }
+                }
             Some(pkg) = rx.recv() => {
                 //tracing::info!("Sending packet to client: {:?}", pkg);
                 match pkg {
@@ -85,13 +117,14 @@ impl Client {
                         SocketPacket::ProxyJoinPacket(packet) => {
                             let (client_tx, client_rx) = mpsc::unbounded_channel();
                             {
+                                //self.stats_tx.send(Stats::ClientsConnected(self.state.lock().await.connections.len() as u16))?;
                                 self.state.lock().await.connections.insert(packet.client_id, client_tx);
                             }
                             let tx_clone = tx.clone();
                             let state_clone = state.clone();
-                                let scope = self.clone();
+                                let mc_server= self.mc_server.clone();
                             tokio::spawn(async move {
-                                if let Err(e) = scope.handle_client(tx_clone, client_rx, packet.client_id).await {
+                                if let Err(e) = Client::handle_client(state_clone, tx_clone, client_rx, packet.client_id, mc_server).await {
                                     panic!("An Error occured in the handle_client function: {}", e);
                                 }
                             });
@@ -143,15 +176,16 @@ impl Client {
     }
 
     async fn handle_client(
-        self,
+        state: Arc<Mutex<Shared>>,
         tx: Tx,
         mut rx: mpsc::UnboundedReceiver<ChannelMessage<Vec<u8>>>,
         client_id: u16,
+        mc_server: String,
     ) -> Result<(), Box<dyn Error>> {
         tracing::info!("opening new client with id {}", client_id);
         // connect to server
         let mut buf = [0; 1024];
-        let mut mc_server = TcpStream::connect(self.mc_server).await?;
+        let mut mc_server = TcpStream::connect(mc_server).await?;
         loop {
             tokio::select! {
             Some(pkg) = rx.recv() => {
@@ -191,7 +225,7 @@ impl Client {
         });
         tx.send(ChannelMessage::Packet(packet))?;
 
-        self.state.lock().await.connections.remove(&client_id);
+        state.lock().await.connections.remove(&client_id);
         Ok(())
     }
 }

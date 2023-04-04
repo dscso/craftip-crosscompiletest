@@ -71,7 +71,7 @@ impl MyApp {
     fn new(tx: GuiTriggeredChannel, rx_bg: UnboundedReceiver<GuiChangeEvent>) -> Self {
         let mut servers = vec![ServerPanel {
             state: ServerState::Disconnected,
-            server: "localhost".to_string(),
+            server: "myserver.craftip.net".to_string(),
             local: "127.0.0.1:25564".to_string(),
         }, ServerPanel {
             state: ServerState::Disconnected,

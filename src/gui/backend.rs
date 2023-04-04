@@ -1,6 +1,7 @@
 use eframe::egui;
+use tokio::sync::mpsc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use crate::client::Client;
+use crate::client::{Client, ControlTx};
 use crate::gui::gui_channel::{GuiChangeEvent, GuiTriggeredEvent};
 
 pub struct Controller {
@@ -27,6 +28,9 @@ impl Controller {
         }
     }
     pub async fn update(&mut self) {
+        let mut control_tx: Option<ControlTx> = None;
+
+        let (stats_tx, stats_rx) = mpsc::unbounded_channel();
         while let Some(event) = self.gui_rx.recv().await {
             match event {
                 GuiTriggeredEvent::FrameContext(ctx) => {
@@ -36,8 +40,11 @@ impl Controller {
                     // sleep async 1 sec
                     tracing::info!("Connecting to server: {:?}", server);
                     let server_info = server.clone();
+                    //
+                    let (control_tx_1, control_rx) = mpsc::unbounded_channel();
+                    control_tx = Some(control_tx_1);
+                    let mut client = Client::new(server_info.server, server_info.local, control_rx, stats_tx.clone());
                     tokio::spawn(async move {
-                        let mut client = Client::new(server_info.server, server_info.local);
                         client.connect().await.unwrap();
                     });
 
@@ -46,7 +53,9 @@ impl Controller {
                 GuiTriggeredEvent::Disconnect(server) => {
                     // sleep async 1 sec
                     tracing::info!("Disconnecting from server: {:?}", server);
-                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    if let Some(control_tx) = &control_tx {
+                        control_tx.send(crate::client::Control::Disconnect).unwrap();
+                    }
                     self.send_to_gui(GuiChangeEvent::Disconnected(server.clone()));
                     tracing::info!("Disconnected from server: {:?}", server);
                 }
