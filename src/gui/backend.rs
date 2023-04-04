@@ -1,7 +1,6 @@
-use std::sync::Arc;
 use eframe::egui;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use crate::gui::gui_channel;
+use crate::client::Client;
 use crate::gui::gui_channel::{GuiChangeEvent, GuiTriggeredEvent};
 
 pub struct Controller {
@@ -36,7 +35,12 @@ impl Controller {
                 GuiTriggeredEvent::Connect(server) => {
                     // sleep async 1 sec
                     tracing::info!("Connecting to server: {:?}", server);
-                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    let server_info = server.clone();
+                    tokio::spawn(async move {
+                        let mut client = Client::new(server_info.server, server_info.local);
+                        client.connect().await.unwrap();
+                    });
+
                     self.send_to_gui(GuiChangeEvent::Connected(server.clone()));
                 }
                 GuiTriggeredEvent::Disconnect(server) => {

@@ -2,6 +2,7 @@
 
 mod addressing;
 mod client_handler;
+mod client;
 mod cursor;
 mod datatypes;
 mod gui;
@@ -70,8 +71,8 @@ impl MyApp {
     fn new(tx: GuiTriggeredChannel, rx_bg: UnboundedReceiver<GuiChangeEvent>) -> Self {
         let mut servers = vec![ServerPanel {
             state: ServerState::Disconnected,
-            server: "myserver.craftIP.net".to_string(),
-            local: "localhost:25565".to_string(),
+            server: "localhost".to_string(),
+            local: "127.0.0.1:25564".to_string(),
         }, ServerPanel {
             state: ServerState::Disconnected,
             server: "myserver2.craftip.net".to_string(),
