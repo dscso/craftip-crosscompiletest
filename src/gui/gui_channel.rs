@@ -5,6 +5,7 @@ pub type GuiChangeChannel = mpsc::UnboundedSender<GuiChangeEvent>;
 
 #[derive(Debug, Clone)]
 pub enum GuiTriggeredEvent {
+    FrameContext(eframe::egui::Context),
     Login,
     Logout,
     Connect(Server),

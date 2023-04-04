@@ -34,31 +34,25 @@ pub async fn main() -> Result<(), eframe::Error> {
 
     let options = eframe::NativeOptions {
         initial_window_size: Some(egui::vec2(400.0, 600.0)),
-        default_theme: Theme::Light,
+        //default_theme: Theme::Light,
         ..Default::default()
     };
-    let (tx_gui, mut rx_gui) = mpsc::unbounded_channel();
-    let (tx_bg, mut rx_bg) = mpsc::unbounded_channel::<GuiChangeEvent>();
+    let (gui_tx, mut gui_rx) = mpsc::unbounded_channel();
+    let (bck_tx, mut bck_rx) = mpsc::unbounded_channel::<GuiChangeEvent>();
+
     tokio::spawn(async move {
-        while let Some(event) = rx_gui.recv().await {
-            match event {
-                GuiTriggeredEvent::Connect(server) => {
-                    // sleep async 1 sec
-                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                    tx_bg.send(GuiChangeEvent::Connected(server.clone())).unwrap();
-                    tracing::info!("Connecting to server: {:?}", server);
-                }
-                _ => {
-                    println!("Unhandled event: {:?}", event);
-                }
-            }
-        }
+        let mut controller = gui::backend::Controller::new(gui_rx, bck_tx);
+        controller.update().await;
     });
 
     eframe::run_native(
         "CraftIP",
         options,
-        Box::new(|_cc| Box::new(MyApp::new(tx_gui, rx_bg))),
+        Box::new(|cc| {
+            let frame = cc.egui_ctx.clone();
+            gui_tx.send(GuiTriggeredEvent::FrameContext(frame)).unwrap();
+            Box::new(MyApp::new(gui_tx, bck_rx))
+        }),
     )
 }
 
@@ -69,20 +63,21 @@ struct MyApp {
     servers: Vec<ServerPanel>,
     tx: GuiTriggeredChannel,
     rx: UnboundedReceiver<GuiChangeEvent>,
+    frames_rendered: usize,
 }
 
 impl MyApp {
     fn new(tx: GuiTriggeredChannel, rx_bg: UnboundedReceiver<GuiChangeEvent>) -> Self {
         let mut servers = vec![ServerPanel {
-            connected: ServerState::Disconnected,
+            state: ServerState::Disconnected,
             server: "myserver.craftIP.net".to_string(),
             local: "localhost:25565".to_string(),
         }, ServerPanel {
-            connected: ServerState::Disconnected,
+            state: ServerState::Disconnected,
             server: "myserver2.craftip.net".to_string(),
             local: "localhost:25565".to_string(),
         }, ServerPanel {
-            connected: ServerState::Disconnected,
+            state: ServerState::Disconnected,
             server: "myserver3.craftip.net".to_string(),
             local: "localhost:25565".to_string(),
         }];
@@ -93,27 +88,36 @@ impl MyApp {
             edit_panel: EditPanel::default(),
             loading: false,
             servers: servers,
-
+            frames_rendered: 0,
         }
+    }
+    fn server_set_state(&mut self, server: &str, state: ServerState) {
+        self.servers.iter_mut()
+            .filter(|s| s.server == server)
+            .for_each(|s| s.state = state.clone());
+        println!("Server state changed: {} -> {:?}", server, state);
     }
 }
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        //ctx.request_repaint();
+        self.frames_rendered += 1;
         // update state from background thread
         if let Ok(event) = self.rx.try_recv() {
             match event {
                 GuiChangeEvent::Connected(server) => {
-                    self.servers.iter_mut()
-                        .filter(|s| s.server == server.server)
-                        .for_each(|s| s.connected = ServerState::Connected);
+                    tracing::info!("connected! setting state...");
+                    self.server_set_state(&server.server, ServerState::Connected);
+                }
+                GuiChangeEvent::Disconnected(server) => {
+                    self.server_set_state(&server.server, ServerState::Disconnected);
                 }
                 _ => {
                     println!("Unhandled event: {:?}", event);
                 }
             }
         }
+        //tracing::info!("Updating gui {:?}", self.servers);
         // draw ui
         CentralPanel::default().show(ctx, |ui| {
             ui.set_enabled(!self.login_panel.open);
@@ -126,13 +130,14 @@ impl eframe::App for MyApp {
                 }
                 ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
                     ui.label(RichText::new("pre alpha").color(Color32::RED).small());
+                    ui.label(RichText::new(format!("{}", self.frames_rendered)).small());
                 });
             });
             ui.separator();
 
-            let busy = self.servers.iter().any(|s| s.connected != ServerState::Disconnected);
+            let already_connected = self.servers.iter().any(|s| s.state != ServerState::Disconnected);
             for mut server in &mut self.servers {
-                let enabled = !busy || server.connected != ServerState::Disconnected;
+                let enabled = !already_connected || server.state != ServerState::Disconnected;
                 server.update(ui, &mut self.tx, enabled);
             }
 
@@ -147,13 +152,13 @@ impl eframe::App for MyApp {
 struct ServerPanel {
     server: String,
     local: String,
-    connected: ServerState,
+    state: ServerState,
 }
 
 impl Default for ServerPanel {
     fn default() -> Self {
         Self {
-            connected: ServerState::Disconnected,
+            state: ServerState::Disconnected,
             server: String::new(),
             local: String::new(),
         }
@@ -191,8 +196,9 @@ impl EditPanel {
 
 impl ServerPanel {
     fn update(&mut self, ui: &mut Ui, tx: &mut GuiTriggeredChannel, enabled: bool) {
-        let configurable = self.connected == ServerState::Disconnected;
+        let configurable = self.state == ServerState::Disconnected;
         ui.group(|ui| {
+            ui.set_enabled(enabled);
             ui.with_layout(Layout::left_to_right(Align::TOP), |ui| {
                 egui::Grid::new(self.server.as_str())
                     .num_columns(2)
@@ -223,29 +229,58 @@ impl ServerPanel {
 
                 ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
                     ui.with_layout(Layout::top_down(Align::RIGHT), |ui| {
-                        ui.set_enabled(configurable);
-                        if ui.button("🗑").clicked() {
-                            println!("delete button clicked");
+                        match self.state {
+                            ServerState::Disconnected => {
+                                if ui.button("🗑").clicked() {
+                                    println!("delete button clicked");
+                                }
+                            }
+                            ServerState::Connecting => {
+                                ui.label("");
+                                ui.label("⌛");
+                            }
+
+                            ServerState::Disconnecting => {
+                                ui.label("");
+                                ui.label("⌛");
+                            }
+                            ServerState::Connected => {
+                                // leaf green color
+                                ui.label(RichText::new("0 Connected").color(Color32::from_rgb(0, 204, 0)));
+                                ui.label("🔌");
+                            }
                         }
                     });
                 });
             });
-            let btn_txt = match self.connected {
-                ServerState::Disconnected => "Connect",
-                ServerState::Connecting => "Connecting...",
-                ServerState::Connected => "Disconnect",
-                ServerState::Disconnecting => "Disconnecting...",
+            let (btn_txt, enabled) = match self.state {
+                ServerState::Disconnected => ("Connect", true),
+                ServerState::Connecting => ("Connecting...", false),
+                ServerState::Connected => ("Disconnect", true),
+                ServerState::Disconnecting => ("Disconnecting...", false),
             };
             ui.set_enabled(enabled);
             if ui.add_sized(
                 egui::vec2(ui.available_width(), 30.0),
                 egui::Button::new(btn_txt),
             ).clicked() {
-                self.connected = ServerState::Connecting;
-                tx.send(GuiTriggeredEvent::Connect(Server {
-                    server: self.server.clone(),
-                    local: self.local.clone(),
-                })).expect("failed to send connect event");
+                match self.state {
+                    ServerState::Connected => {
+                        self.state = ServerState::Disconnecting;
+                        tx.send(GuiTriggeredEvent::Disconnect(Server {
+                            server: self.server.clone(),
+                            local: self.local.clone(),
+                        })).expect("failed to send disconnect event");
+                    }
+                    ServerState::Disconnected => {
+                        self.state = ServerState::Connecting;
+                        tx.send(GuiTriggeredEvent::Connect(Server {
+                            server: self.server.clone(),
+                            local: self.local.clone(),
+                        })).expect("failed to send disconnect event");
+                    }
+                    _ => unreachable!("invalid state"),
+                }
             }
         });
     }
