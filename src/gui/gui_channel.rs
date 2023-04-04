@@ -28,7 +28,13 @@ pub enum GuiChangeEvent {
 #[derive(Debug, Clone)]
 pub struct Server {
     pub server: String,
-    pub username: String,
-    pub password: String,
     pub local: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ServerState {
+    Disconnected,
+    Connecting,
+    Connected,
+    Disconnecting,
 }
