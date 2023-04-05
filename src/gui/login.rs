@@ -60,3 +60,36 @@ impl LoginPanel {
         });
     }
 }
+
+
+pub struct ErrorPanel {
+    pub open: bool,
+    pub error: String,
+}
+
+// implement default for LoginPanel
+impl Default for ErrorPanel {
+    fn default() -> Self {
+        Self {
+            open: false,
+            error: String::new(),
+        }
+    }
+}
+
+impl ErrorPanel {
+    pub fn update_error(&mut self, ctx: &egui::Context) {
+        if !self.open {
+            return;
+        }
+        popup(ctx, "Error", &mut self.open, |ui| {
+            // center label
+            ui.with_layout(Layout::top_down(Align::Center), |ui| {
+                ui.label(
+                    RichText::new(self.error.clone())
+                        .color(Color32::DARK_RED),
+                );
+            });
+        });
+    }
+}

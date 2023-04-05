@@ -13,12 +13,13 @@ mod socket_packet;
 
 use crate::gui::gui_elements::popup;
 use crate::gui::login::LoginPanel;
-use eframe::egui::{CentralPanel, Color32, Layout, RichText, Ui, Window};
+use eframe::egui::{CentralPanel, Color32, Layout, popup, RichText, Ui, Window};
 use eframe::emath::Align;
 use eframe::{egui, Theme};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedReceiver;
 use crate::gui::gui_channel::{GuiChangeEvent, GuiTriggeredChannel, GuiTriggeredEvent, Server, ServerState};
+use crate::gui::gui_elements;
 
 #[tokio::main]
 pub async fn main() -> Result<(), eframe::Error> {
@@ -61,6 +62,7 @@ struct MyApp {
     login_panel: LoginPanel,
     edit_panel: EditPanel,
     loading: bool,
+    error: Option<String>,
     servers: Vec<ServerPanel>,
     tx: GuiTriggeredChannel,
     rx: UnboundedReceiver<GuiChangeEvent>,
@@ -87,6 +89,7 @@ impl MyApp {
             rx: rx_bg,
             login_panel: LoginPanel::default(),
             edit_panel: EditPanel::default(),
+            error: None,
             loading: false,
             servers: servers,
             frames_rendered: 0,
@@ -108,6 +111,7 @@ impl eframe::App for MyApp {
             match event {
                 GuiChangeEvent::Connected(server) => {
                     tracing::info!("connected! setting state...");
+                    self.error = None;
                     self.server_set_state(&server.server, ServerState::Connected);
                 }
                 GuiChangeEvent::Disconnected(server) => {
@@ -115,6 +119,9 @@ impl eframe::App for MyApp {
                 }
                 GuiChangeEvent::Stats(stats) => {
                     println!("stats: {:?}", stats);
+                }
+                GuiChangeEvent::Error(err) => {
+                    self.error = Some(err);
                 }
                 _ => {
                     println!("Unhandled event: {:?}", event);
@@ -147,6 +154,12 @@ impl eframe::App for MyApp {
 
             if ui.button("+").clicked() {
                 println!("add button clicked");
+            }
+            if let Some(error) = &self.error {
+                ui.label(RichText::new(error).color(Color32::RED));
+                if ui.button("OK").clicked() {
+                    self.error = None;
+                }
             }
         });
     }

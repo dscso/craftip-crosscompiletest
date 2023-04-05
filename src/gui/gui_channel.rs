@@ -24,7 +24,7 @@ pub enum GuiChangeEvent {
     Disconnected(Server),
     Send,
     Receive,
-    Error,
+    Error(String),
 }
 
 #[derive(Debug, Clone)]

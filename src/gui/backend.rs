@@ -44,8 +44,18 @@ impl Controller {
                     let (control_tx_1, control_rx) = mpsc::unbounded_channel();
                     control_tx = Some(control_tx_1);
                     let mut client = Client::new(server_info.server, server_info.local, stats_tx.clone());
+                    let server_shadow = server.clone();
+                    let tx = self.bck_tx.clone();
+                    let ctx = self.ctx.clone();
                     tokio::spawn(async move {
-                        client.connect(control_rx).await.unwrap();
+                        if let Err(e) = client.connect(control_rx).await {
+                            tracing::error!("Error connecting to server: {:?}", e);
+                            tx.send(GuiChangeEvent::Error(format!("Error connecting to server: {:?}", e))).unwrap();
+                        }
+                        tx.send(GuiChangeEvent::Disconnected(server_shadow.clone())).unwrap();
+                        if let Some(ctx) = ctx {
+                            ctx.request_repaint();
+                        }
                     });
 
                     self.send_to_gui(GuiChangeEvent::Connected(server.clone()));
@@ -56,8 +66,6 @@ impl Controller {
                     if let Some(control_tx) = &control_tx {
                         control_tx.send(crate::client::Control::Disconnect).unwrap();
                     }
-                    self.send_to_gui(GuiChangeEvent::Disconnected(server.clone()));
-                    tracing::info!("Disconnected from server: {:?}", server);
                 }
                 _ => {
                     println!("Unhandled event: {:?}", event);
