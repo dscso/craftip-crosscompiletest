@@ -39,7 +39,6 @@ pub fn password(password: &mut String) -> impl egui::Widget + '_ {
     }
 }
 
-
 /// A popup window with a title and a close button.
 /// The popup is centered on the screen, and not movable/resizable.
 /// add_contents is a closure that adds the contents of the popup.

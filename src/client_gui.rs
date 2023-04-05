@@ -1,8 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 mod addressing;
-mod client_handler;
 mod client;
+mod client_handler;
 mod cursor;
 mod datatypes;
 mod gui;
@@ -11,15 +11,16 @@ mod packet_codec;
 mod proxy;
 mod socket_packet;
 
+use crate::gui::gui_channel::{
+    GuiChangeEvent, GuiTriggeredChannel, GuiTriggeredEvent, Server, ServerState,
+};
 use crate::gui::gui_elements::popup;
 use crate::gui::login::LoginPanel;
-use eframe::egui::{CentralPanel, Color32, Layout, popup, RichText, Ui, Window};
+use eframe::egui::{popup, CentralPanel, Color32, Layout, RichText, Ui, Window};
 use eframe::emath::Align;
 use eframe::{egui, Theme};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedReceiver;
-use crate::gui::gui_channel::{GuiChangeEvent, GuiTriggeredChannel, GuiTriggeredEvent, Server, ServerState};
-use crate::gui::gui_elements;
 
 #[tokio::main]
 pub async fn main() -> Result<(), eframe::Error> {
@@ -71,19 +72,26 @@ struct MyApp {
 
 impl MyApp {
     fn new(tx: GuiTriggeredChannel, rx_bg: UnboundedReceiver<GuiChangeEvent>) -> Self {
-        let mut servers = vec![ServerPanel {
-            state: ServerState::Disconnected,
-            server: "myserver.craftip.net".to_string(),
-            local: "127.0.0.1:25564".to_string(),
-        }, ServerPanel {
-            state: ServerState::Disconnected,
-            server: "myserver2.craftip.net".to_string(),
-            local: "localhost:25565".to_string(),
-        }, ServerPanel {
-            state: ServerState::Disconnected,
-            server: "myserver3.craftip.net".to_string(),
-            local: "localhost:25565".to_string(),
-        }];
+        let mut servers = vec![
+            ServerPanel {
+                state: ServerState::Disconnected,
+                server: "myserver.craftip.net".to_string(),
+                connected: 0,
+                local: "127.0.0.1:25564".to_string(),
+            },
+            ServerPanel {
+                state: ServerState::Disconnected,
+                server: "myserver2.craftip.net".to_string(),
+                connected: 0,
+                local: "localhost:25565".to_string(),
+            },
+            ServerPanel {
+                state: ServerState::Disconnected,
+                server: "myserver3.craftip.net".to_string(),
+                connected: 0,
+                local: "localhost:25565".to_string(),
+            },
+        ];
         Self {
             tx,
             rx: rx_bg,
@@ -91,15 +99,17 @@ impl MyApp {
             edit_panel: EditPanel::default(),
             error: None,
             loading: false,
-            servers: servers,
+            servers,
             frames_rendered: 0,
         }
     }
-    fn server_set_state(&mut self, server: &str, state: ServerState) {
-        self.servers.iter_mut()
-            .filter(|s| s.server == server)
-            .for_each(|s| s.state = state.clone());
-        println!("Server state changed: {} -> {:?}", server, state);
+    // set_active_server pass in closure the funcion that will be called on the active server
+    fn set_active_server(&mut self, closure: impl FnOnce(&mut ServerPanel)) {
+        self.servers
+            .iter_mut()
+            .find(|s| s.state != ServerState::Disconnected)
+            .map(|s| closure(s))
+            .expect("No active server!");
     }
 }
 
@@ -109,16 +119,22 @@ impl eframe::App for MyApp {
         // update state from background thread
         if let Ok(event) = self.rx.try_recv() {
             match event {
-                GuiChangeEvent::Connected(server) => {
-                    tracing::info!("connected! setting state...");
-                    self.error = None;
-                    self.server_set_state(&server.server, ServerState::Connected);
+                GuiChangeEvent::Connected => {
+                    tracing::info!("Connected to server!");
+                    self.set_active_server(|s| {
+                        s.state = ServerState::Connected;
+                    });
                 }
-                GuiChangeEvent::Disconnected(server) => {
-                    self.server_set_state(&server.server, ServerState::Disconnected);
+                GuiChangeEvent::Disconnected => {
+                    self.set_active_server(|s| {
+                        s.state = ServerState::Disconnected;
+                        s.connected = 0;
+                    });
                 }
                 GuiChangeEvent::Stats(stats) => {
-                    println!("stats: {:?}", stats);
+                    self.set_active_server(|s| {
+                        s.connected = stats;
+                    });
                 }
                 GuiChangeEvent::Error(err) => {
                     self.error = Some(err);
@@ -146,7 +162,10 @@ impl eframe::App for MyApp {
             });
             ui.separator();
 
-            let already_connected = self.servers.iter().any(|s| s.state != ServerState::Disconnected);
+            let already_connected = self
+                .servers
+                .iter()
+                .any(|s| s.state != ServerState::Disconnected);
             for mut server in &mut self.servers {
                 let enabled = !already_connected || server.state != ServerState::Disconnected;
                 server.update(ui, &mut self.tx, enabled);
@@ -168,6 +187,7 @@ impl eframe::App for MyApp {
 #[derive(Debug, Clone)]
 struct ServerPanel {
     server: String,
+    connected: u16,
     local: String,
     state: ServerState,
 }
@@ -177,6 +197,7 @@ impl Default for ServerPanel {
         Self {
             state: ServerState::Disconnected,
             server: String::new(),
+            connected: 0,
             local: String::new(),
         }
     }
@@ -240,7 +261,6 @@ impl ServerPanel {
                             }
                         });
 
-
                         ui.end_row();
                     });
 
@@ -263,7 +283,10 @@ impl ServerPanel {
                             }
                             ServerState::Connected => {
                                 // leaf green color
-                                ui.label(RichText::new("0 Connected").color(Color32::from_rgb(0, 204, 0)));
+                                ui.label(
+                                    RichText::new(format!("{} Clients", self.connected))
+                                        .color(Color32::from_rgb(0, 204, 0)),
+                                );
                                 ui.label("🔌");
                             }
                         }
@@ -277,24 +300,29 @@ impl ServerPanel {
                 ServerState::Disconnecting => ("Disconnecting...", false),
             };
             ui.set_enabled(enabled);
-            if ui.add_sized(
-                egui::vec2(ui.available_width(), 30.0),
-                egui::Button::new(btn_txt),
-            ).clicked() {
+            if ui
+                .add_sized(
+                    egui::vec2(ui.available_width(), 30.0),
+                    egui::Button::new(btn_txt),
+                )
+                .clicked()
+            {
                 match self.state {
                     ServerState::Connected => {
                         self.state = ServerState::Disconnecting;
                         tx.send(GuiTriggeredEvent::Disconnect(Server {
                             server: self.server.clone(),
                             local: self.local.clone(),
-                        })).expect("failed to send disconnect event");
+                        }))
+                        .expect("failed to send disconnect event");
                     }
                     ServerState::Disconnected => {
                         self.state = ServerState::Connecting;
                         tx.send(GuiTriggeredEvent::Connect(Server {
                             server: self.server.clone(),
                             local: self.local.clone(),
-                        })).expect("failed to send disconnect event");
+                        }))
+                        .expect("failed to send disconnect event");
                     }
                     _ => unreachable!("invalid state"),
                 }

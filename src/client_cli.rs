@@ -10,21 +10,17 @@ use tokio::sync::Mutex;
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 
+mod client;
 mod cursor;
 mod datatypes;
 mod minecraft;
 mod packet_codec;
 mod proxy;
 mod socket_packet;
-mod client;
 
 use packet_codec::PacketCodec;
 use socket_packet::ChannelMessage;
 use socket_packet::SocketPacket;
-
-
-
-
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -41,9 +37,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Connect to server 1
     let server1_addr = "127.0.0.1:25565";
 
-
     // Connect to server 2
     let mc_server_addr = "127.0.0.1:25564";
-
 }
-
