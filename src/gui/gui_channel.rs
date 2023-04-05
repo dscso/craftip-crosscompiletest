@@ -19,6 +19,7 @@ pub enum GuiTriggeredEvent {
 pub enum GuiChangeEvent {
     Login,
     Logout,
+    Stats(u16),
     Connected(Server),
     Disconnected(Server),
     Send,

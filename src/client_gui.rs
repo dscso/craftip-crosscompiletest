@@ -113,6 +113,9 @@ impl eframe::App for MyApp {
                 GuiChangeEvent::Disconnected(server) => {
                     self.server_set_state(&server.server, ServerState::Disconnected);
                 }
+                GuiChangeEvent::Stats(stats) => {
+                    println!("stats: {:?}", stats);
+                }
                 _ => {
                     println!("Unhandled event: {:?}", event);
                 }

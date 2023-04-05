@@ -34,11 +34,11 @@ pub type ControlRx = mpsc::UnboundedReceiver<Control>;
 pub type StatsTx = mpsc::UnboundedSender<Stats>;
 pub type StatsRx = mpsc::UnboundedReceiver<Stats>;
 
+#[derive(Clone)]
 pub struct Client {
     proxy_server: String,
     mc_server: String,
     state: Arc<Mutex<Shared>>,
-    control_rx: ControlRx,
     stats_tx: StatsTx,
 }
 
@@ -57,11 +57,10 @@ impl Shared {
 }
 
 impl Client {
-    pub fn new(proxy_server: String, mc_server: String, control_rx: ControlRx, stats_tx: StatsTx) -> Self {
+    pub fn new(proxy_server: String, mc_server: String, stats_tx: StatsTx) -> Self {
         Client {
             proxy_server,
             mc_server,
-            control_rx,
             stats_tx,
             state: Arc::new(Mutex::new(Shared::new())),
         }
@@ -69,7 +68,7 @@ impl Client {
 }
 
 impl Client {
-    pub async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn connect(&mut self, mut control_rx: ControlRx) -> Result<(), Box<dyn std::error::Error>> {
         // todo good formatting
         let mut proxy_stream = TcpStream::connect(format!("{}:25565", &self.proxy_server)).await?;
         let mut proxy = Framed::new(proxy_stream, PacketCodec::new(1024 * 4));
@@ -86,7 +85,7 @@ impl Client {
         loop {
             // Read from server 1
             tokio::select! {
-                result = self.control_rx.recv() => {
+                result = control_rx.recv() => {
                     match result {
                         Some(Control::Disconnect) => {
                             tracing::info!("Disconnecting from proxy server");
@@ -121,10 +120,9 @@ impl Client {
                                 self.state.lock().await.connections.insert(packet.client_id, client_tx);
                             }
                             let tx_clone = tx.clone();
-                            let state_clone = state.clone();
-                                let mc_server= self.mc_server.clone();
+                            let scope = self.clone();
                             tokio::spawn(async move {
-                                if let Err(e) = Client::handle_client(state_clone, tx_clone, client_rx, packet.client_id, mc_server).await {
+                                if let Err(e) = scope.handle_client(tx_clone, client_rx, packet.client_id).await {
                                     panic!("An Error occured in the handle_client function: {}", e);
                                 }
                             });
@@ -176,16 +174,15 @@ impl Client {
     }
 
     async fn handle_client(
-        state: Arc<Mutex<Shared>>,
+        self,
         tx: Tx,
         mut rx: mpsc::UnboundedReceiver<ChannelMessage<Vec<u8>>>,
         client_id: u16,
-        mc_server: String,
     ) -> Result<(), Box<dyn Error>> {
         tracing::info!("opening new client with id {}", client_id);
         // connect to server
         let mut buf = [0; 1024];
-        let mut mc_server = TcpStream::connect(mc_server).await?;
+        let mut mc_server = TcpStream::connect(self.mc_server).await?;
         loop {
             tokio::select! {
             Some(pkg) = rx.recv() => {
@@ -225,7 +222,7 @@ impl Client {
         });
         tx.send(ChannelMessage::Packet(packet))?;
 
-        state.lock().await.connections.remove(&client_id);
+        self.state.lock().await.connections.remove(&client_id);
         Ok(())
     }
 }

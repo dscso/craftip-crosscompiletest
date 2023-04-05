@@ -43,9 +43,9 @@ impl Controller {
                     //
                     let (control_tx_1, control_rx) = mpsc::unbounded_channel();
                     control_tx = Some(control_tx_1);
-                    let mut client = Client::new(server_info.server, server_info.local, control_rx, stats_tx.clone());
+                    let mut client = Client::new(server_info.server, server_info.local, stats_tx.clone());
                     tokio::spawn(async move {
-                        client.connect().await.unwrap();
+                        client.connect(control_rx).await.unwrap();
                     });
 
                     self.send_to_gui(GuiChangeEvent::Connected(server.clone()));
