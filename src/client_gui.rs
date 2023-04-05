@@ -16,9 +16,9 @@ use crate::gui::gui_channel::{
 };
 use crate::gui::gui_elements::popup;
 use crate::gui::login::LoginPanel;
-use eframe::egui::{popup, CentralPanel, Color32, Layout, RichText, Ui, Window};
+use eframe::egui::{CentralPanel, Color32, Layout, RichText, Ui};
 use eframe::emath::Align;
-use eframe::{egui, Theme};
+use eframe::egui;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -40,8 +40,8 @@ pub async fn main() -> Result<(), eframe::Error> {
         //default_theme: Theme::Light,
         ..Default::default()
     };
-    let (gui_tx, mut gui_rx) = mpsc::unbounded_channel();
-    let (bck_tx, mut bck_rx) = mpsc::unbounded_channel::<GuiChangeEvent>();
+    let (gui_tx, gui_rx) = mpsc::unbounded_channel();
+    let (bck_tx, bck_rx) = mpsc::unbounded_channel::<GuiChangeEvent>();
 
     tokio::spawn(async move {
         let mut controller = gui::backend::Controller::new(gui_rx, bck_tx);
@@ -103,18 +103,18 @@ impl MyApp {
             frames_rendered: 0,
         }
     }
-    // set_active_server pass in closure the funcion that will be called on the active server
+    // set_active_server pass in closure the function that will be called on the active server
     fn set_active_server(&mut self, closure: impl FnOnce(&mut ServerPanel)) {
         self.servers
             .iter_mut()
             .find(|s| s.state != ServerState::Disconnected)
-            .map(|s| closure(s))
+            .map(closure)
             .expect("No active server!");
     }
 }
 
 impl eframe::App for MyApp {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.frames_rendered += 1;
         // update state from background thread
         if let Ok(event) = self.rx.try_recv() {
@@ -144,7 +144,6 @@ impl eframe::App for MyApp {
                 }
             }
         }
-        //tracing::info!("Updating gui {:?}", self.servers);
         // draw ui
         CentralPanel::default().show(ctx, |ui| {
             ui.set_enabled(!self.login_panel.open);
@@ -166,7 +165,7 @@ impl eframe::App for MyApp {
                 .servers
                 .iter()
                 .any(|s| s.state != ServerState::Disconnected);
-            for mut server in &mut self.servers {
+            for server in &mut self.servers {
                 let enabled = !already_connected || server.state != ServerState::Disconnected;
                 server.update(ui, &mut self.tx, enabled);
             }
@@ -314,7 +313,7 @@ impl ServerPanel {
                             server: self.server.clone(),
                             local: self.local.clone(),
                         }))
-                        .expect("failed to send disconnect event");
+                            .expect("failed to send disconnect event");
                     }
                     ServerState::Disconnected => {
                         self.state = ServerState::Connecting;
@@ -322,7 +321,7 @@ impl ServerPanel {
                             server: self.server.clone(),
                             local: self.local.clone(),
                         }))
-                        .expect("failed to send disconnect event");
+                            .expect("failed to send disconnect event");
                     }
                     _ => unreachable!("invalid state"),
                 }

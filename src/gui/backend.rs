@@ -61,7 +61,7 @@ impl Controller {
                     }
                 }
                 event = self.gui_rx.recv() => {
-                    if let None = event {
+                    if event.is_none() {
                         tracing::info!("GUI channel closed");
                         break;
                     }

@@ -64,11 +64,11 @@ impl Decoder for PacketCodec {
             Protocol::Unknown => {
                 let result = SocketPacket::parse_first_package(buf);
                 match result.as_ref() {
-                    Ok(SocketPacket::ProxyHelloPacket(pkg)) => {
+                    Ok(SocketPacket::ProxyHello(pkg)) => {
                         tracing::debug!("::::::::::::: Changing connection to proxy protocol version {} ::::::::::::::", pkg.version);
                         self.protocol = Protocol::Proxy(pkg.version as u32);
                     }
-                    Ok(SocketPacket::MCHelloPacket(pkg)) => {
+                    Ok(SocketPacket::MCHello(pkg)) => {
                         tracing::debug!("::::::::::::: Changing connection to MC protocol version {} ::::::::::::::", pkg.version);
                         self.protocol = Protocol::MC(pkg.version as u32);
                     }
@@ -114,9 +114,9 @@ impl Encoder<SocketPacket> for PacketCodec {
 
     fn encode(&mut self, pkg: SocketPacket, buf: &mut BytesMut) -> Result<(), io::Error> {
         let data = match pkg {
-            SocketPacket::MCHelloPacket(packet) => packet.data,
-            SocketPacket::MCDataPacket(packet) => packet.data,
-            SocketPacket::UnknownPacket => {
+            SocketPacket::MCHello(packet) => packet.data,
+            SocketPacket::MCData(packet) => packet.data,
+            SocketPacket::Unknown => {
                 tracing::error!("UnknownPacket: {:?}", pkg);
                 "UnknownPacket".to_string().into_bytes()
             }

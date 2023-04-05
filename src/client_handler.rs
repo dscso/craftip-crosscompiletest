@@ -16,7 +16,6 @@ use crate::proxy::{
     ProxyClientDisconnectPacket, ProxyClientJoinPacket, ProxyDataPacket, ProxyHelloPacket,
 };
 use crate::socket_packet::{ChannelMessage, SocketPacket};
-use tracing;
 
 pub struct Shared {
     pub distributor: Distributor,
@@ -89,12 +88,12 @@ impl Client {
         let client_id = id;
         let mut packet = ProxyDataPacket::from_mc_hello_packet(&hello_packet, client_id);
         packet.client_id = client_id;
-        let packet = SocketPacket::ProxyDataPacket(packet);
+        let packet = SocketPacket::ProxyData(packet);
         if let Err(err) = distributor.lock().await.send_to_server(&hostname, packet) {
             tracing::error!("could not send first packet to proxy {}", err);
             let _ = frames.get_mut().shutdown().map_err(|e| {
                 tracing::error!("could not shutdown socket {}", e);
-            });
+            }).await;
             return Err(DistributorError::UnknownError);
         }
 
@@ -137,10 +136,20 @@ pub async fn process_socket_connection(
     let packet = frames.next().await.ok_or("No first packet received")??;
     tracing::info!("received new packet: {:?}", packet);
     let mut connection: Client = match packet {
-        SocketPacket::MCHelloPacket(packet) => {
-            Client::new_mc_client(distributor.clone(), frames, packet).await?
+        SocketPacket::MCHello(packet) => {
+            match Client::new_mc_client(distributor.clone(), frames, packet.clone()).await {
+                Ok(client) => client,
+                Err(DistributorError::ServerNotFound) => {
+                    tracing::info!("Server not found! {}", packet.hostname);
+                    return Ok(());
+                }
+                Err(err) => {
+                    tracing::error!("could not create new client: {}", err);
+                    return Err(format!("could not create new client {:?}", err).into());
+                }
+            }
         }
-        SocketPacket::ProxyHelloPacket(packet) => {
+        SocketPacket::ProxyHello(packet) => {
             Client::new_proxy_client(distributor.clone(), frames, packet).await?
         }
         _ => {
@@ -168,7 +177,7 @@ pub async fn process_socket_connection(
             result = connection.frames.next() => match result {
                 Some(Ok(msg)) => {
                     match msg {
-                        SocketPacket::MCDataPacket(packet) => {
+                        SocketPacket::MCData(packet) => {
                             let connection_config = connection.connection_type.get_mc();
                             let packet = SocketPacket::from(ProxyDataPacket::from_mc_packet(packet, connection_config.id));
 
@@ -239,7 +248,7 @@ async fn process_proxy_packet(
     packet: SocketPacket,
 ) -> Result<(), DistributorError> {
     match packet {
-        SocketPacket::ProxyDisconnectPacket(packet) => {
+        SocketPacket::ProxyDisconnect(packet) => {
             tracing::info!("Received proxy disconnect packet: {:?}", packet);
 
             match distributor.lock().await.get_client(
@@ -259,9 +268,9 @@ async fn process_proxy_packet(
                 }
             }
         }
-        SocketPacket::ProxyDataPacket(packet) => {
+        SocketPacket::ProxyData(packet) => {
             let client_id = packet.client_id;
-            let mc_packet = SocketPacket::MCDataPacket(MinecraftDataPacket::from(packet));
+            let mc_packet = SocketPacket::MCData(MinecraftDataPacket::from(packet));
             let host = &connection.connection_type.get_proxy().hostname;
             distributor
                 .lock()

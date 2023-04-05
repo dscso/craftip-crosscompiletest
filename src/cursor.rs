@@ -81,6 +81,6 @@ impl CustomCursorMethods for CustomCursor {
             }
         }
         self.set_position(self.position() + bytes.len() as u64);
-        return true;
+        true
     }
 }

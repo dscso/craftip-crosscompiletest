@@ -24,7 +24,7 @@ use socket_packet::SocketPacket;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let subscriber = tracing_subscriber::fmt()
+    /*let subscriber = tracing_subscriber::fmt()
         .compact()
         .with_file(true)
         .with_line_number(true)
@@ -38,5 +38,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let server1_addr = "127.0.0.1:25565";
 
     // Connect to server 2
-    let mc_server_addr = "127.0.0.1:25564";
+    let mc_server_addr = "127.0.0.1:25564";*/
+    println!("hello world");
+    Ok(())
 }

@@ -8,7 +8,7 @@ use eframe::egui::{Align2, Ui, Window};
 /// ui.add(password_ui(&mut my_password));
 /// ```
 pub fn password(password: &mut String) -> impl egui::Widget + '_ {
-    move |ui: &mut egui::Ui| {
+    move |ui: &mut Ui| {
         let state_id = ui.id().with("show_plaintext");
 
         let mut show_plaintext = ui.data_mut(|d| d.get_temp::<bool>(state_id).unwrap_or(false));

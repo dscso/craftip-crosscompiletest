@@ -11,7 +11,7 @@ mod test;
 use tokio::net::TcpListener;
 
 use crate::addressing::Distributor;
-use std::env;
+use std::{env, result};
 use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -40,7 +40,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let (mut socket, addr) = mc_listener.accept().await?;
         let distributor = Arc::clone(&distributor);
         tokio::spawn(async move {
-            client_handler::process_socket_connection(socket, addr, distributor)
+            let result = client_handler::process_socket_connection(socket, addr, distributor)
                 .await
                 .expect("TODO: panic message");
         });

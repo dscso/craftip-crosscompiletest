@@ -97,7 +97,7 @@ impl Client {
     pub async fn connect(
         &mut self,
         mut control_rx: ControlRx,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn Error>> {
         // todo good formatting
         let proxy_stream = TcpStream::connect(format!("{}:25565", &self.proxy_server)).await?;
         let mut proxy = Framed::new(proxy_stream, PacketCodec::new(1024 * 4));
@@ -140,7 +140,7 @@ impl Client {
                 result = proxy.next() => match result {
                     Some(Ok(msg)) => {
                         match msg {
-                            SocketPacket::ProxyJoinPacket(packet) => {
+                            SocketPacket::ProxyJoin(packet) => {
                                 let (client_tx, client_rx) = mpsc::unbounded_channel();
                                 {
                                     self.state.lock().await.add_connection(packet.client_id, client_tx);
@@ -153,7 +153,7 @@ impl Client {
                                     }
                                 });
                             }
-                            SocketPacket::ProxyDataPacket(packet) => {
+                            SocketPacket::ProxyData(packet) => {
                                 match self.state.lock().await.get_connection(packet.client_id) {
                                     Some(tx) => {
                                         tx.send(ChannelMessage::Packet(packet.data.to_vec()))?;
@@ -163,7 +163,7 @@ impl Client {
                                     }
                                 }
                             }
-                            SocketPacket::ProxyDisconnectPacket(packet) => {
+                            SocketPacket::ProxyDisconnect(packet) => {
                                 match self.state.lock().await.connections.get(&packet.client_id) {
                                     Some(tx) => {
                                         tx.send(ChannelMessage::Close)?;
@@ -232,7 +232,7 @@ impl Client {
                     let packet = SocketPacket::from(proxy::ProxyDataPacket {
                         data: buf[0..n].to_vec(),
                         client_id,
-                        length: n as usize,
+                        length: n,
                     });
 
                     tx.send(ChannelMessage::Packet(packet))?;

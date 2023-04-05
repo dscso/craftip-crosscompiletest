@@ -13,57 +13,57 @@ use crate::proxy::{
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub enum SocketPacket {
-    MCHelloPacket(MinecraftHelloPacket),
-    MCDataPacket(MinecraftDataPacket),
-    ProxyHelloPacket(ProxyHelloPacket),
-    ProxyJoinPacket(ProxyClientJoinPacket),
-    ProxyDisconnectPacket(ProxyClientDisconnectPacket),
-    ProxyDataPacket(ProxyDataPacket),
-    UnknownPacket,
+    MCHello(MinecraftHelloPacket),
+    MCData(MinecraftDataPacket),
+    ProxyHello(ProxyHelloPacket),
+    ProxyJoin(ProxyClientJoinPacket),
+    ProxyDisconnect(ProxyClientDisconnectPacket),
+    ProxyData(ProxyDataPacket),
+    Unknown ,
 }
 
 impl From<MinecraftHelloPacket> for SocketPacket {
     fn from(packet: MinecraftHelloPacket) -> Self {
-        SocketPacket::MCHelloPacket(packet)
+        SocketPacket::MCHello(packet)
     }
 }
 
 impl From<MinecraftDataPacket> for SocketPacket {
     fn from(packet: MinecraftDataPacket) -> Self {
-        SocketPacket::MCDataPacket(packet)
+        SocketPacket::MCData(packet)
     }
 }
 
 impl From<ProxyHelloPacket> for SocketPacket {
     fn from(packet: ProxyHelloPacket) -> Self {
-        SocketPacket::ProxyHelloPacket(packet)
+        SocketPacket::ProxyHello(packet)
     }
 }
 
 impl From<ProxyClientJoinPacket> for SocketPacket {
     fn from(packet: ProxyClientJoinPacket) -> Self {
-        SocketPacket::ProxyJoinPacket(packet)
+        SocketPacket::ProxyJoin(packet)
     }
 }
 
 impl From<ProxyClientDisconnectPacket> for SocketPacket {
     fn from(packet: ProxyClientDisconnectPacket) -> Self {
-        SocketPacket::ProxyDisconnectPacket(packet)
+        SocketPacket::ProxyDisconnect(packet)
     }
 }
 
 impl From<ProxyDataPacket> for SocketPacket {
     fn from(packet: ProxyDataPacket) -> Self {
-        SocketPacket::ProxyDataPacket(packet)
+        SocketPacket::ProxyData(packet)
     }
 }
 
 impl SocketPacket {
     pub fn new(buf: &mut BytesMut, first_pkg: bool) -> Result<SocketPacket, PacketError> {
         if first_pkg {
-            MinecraftHelloPacket::new(buf).map(SocketPacket::MCHelloPacket)
+            MinecraftHelloPacket::new(buf).map(SocketPacket::MCHello)
         } else {
-            MinecraftDataPacket::new(buf).map(SocketPacket::MCDataPacket)
+            MinecraftDataPacket::new(buf).map(SocketPacket::MCData)
         }
     }
     pub fn encode(&self) -> Result<Vec<u8>, PacketError> {
@@ -90,7 +90,7 @@ impl SocketPacket {
             &cursor.get_ref()
                 [cursor.position() as usize..cursor.position() as usize + length as usize],
         )
-        .map_err(|_| PacketError::NotValid)?;
+            .map_err(|_| PacketError::NotValid)?;
         buf.advance(cursor.position() as usize + length as usize);
         // decode bincode packet
         return Ok(result);
@@ -124,7 +124,7 @@ impl SocketPacket {
 /// Custom packet type for tokio channels to be able to close the client socket by the proxy
 /// uses Packet type as a generic type
 /// or Close to close the socket
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ChannelMessage<T> {
     Packet(T),
     Close,
