@@ -94,10 +94,7 @@ impl Client {
 }
 
 impl Client {
-    pub async fn connect(
-        &mut self,
-        mut control_rx: ControlRx,
-    ) -> Result<(), Box<dyn Error>> {
+    pub async fn connect(&mut self, mut control_rx: ControlRx) -> Result<(), Box<dyn Error>> {
         // todo good formatting
         let proxy_stream = TcpStream::connect(format!("{}:25565", &self.proxy_server)).await?;
         let mut proxy = Framed::new(proxy_stream, PacketCodec::new(1024 * 4));

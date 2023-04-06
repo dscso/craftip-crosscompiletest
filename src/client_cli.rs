@@ -1,14 +1,4 @@
-use std::collections::HashMap;
 use std::error::Error;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-use futures::SinkExt;
-use std::sync::Arc;
-use tokio::net::TcpStream;
-use tokio::sync::mpsc;
-use tokio::sync::Mutex;
-use tokio_stream::StreamExt;
-use tokio_util::codec::Framed;
 
 mod client;
 mod cursor;
@@ -17,10 +7,6 @@ mod minecraft;
 mod packet_codec;
 mod proxy;
 mod socket_packet;
-
-use packet_codec::PacketCodec;
-use socket_packet::ChannelMessage;
-use socket_packet::SocketPacket;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {

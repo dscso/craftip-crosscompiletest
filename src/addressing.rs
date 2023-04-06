@@ -167,12 +167,11 @@ impl Distributor {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::{IpAddr, Ipv4Addr};
     use std::net::SocketAddr;
+    use std::net::{IpAddr, Ipv4Addr};
 
     #[test]
     fn test_add_client() {
@@ -184,12 +183,16 @@ mod tests {
         distributor.add_server("localhost", tx.clone()).unwrap();
 
         // add client
-        let client_id = distributor.add_client(addr, "localhost", tx.clone()).unwrap();
+        let client_id = distributor
+            .add_client(addr, "localhost", tx.clone())
+            .unwrap();
         assert_eq!(client_id, 0);
 
         // add another client
         let addr2 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1235);
-        let client_id = distributor.add_client(addr2, "localhost", tx.clone()).unwrap();
+        let client_id = distributor
+            .add_client(addr2, "localhost", tx.clone())
+            .unwrap();
         assert_eq!(client_id, 1);
 
         // too many clients
@@ -208,7 +211,10 @@ mod tests {
         distributor.add_server("localhost", tx.clone()).unwrap();
         assert!(distributor.servers.contains_key("localhost"));
         assert!(distributor.server_clients.contains_key("localhost"));
-        assert_eq!(distributor.server_clients.get("localhost").unwrap().len(), 100);
+        assert_eq!(
+            distributor.server_clients.get("localhost").unwrap().len(),
+            100
+        );
 
         // add duplicate server
         let result = distributor.add_server("localhost", tx.clone());
@@ -225,7 +231,9 @@ mod tests {
         distributor.add_server("localhost", tx.clone()).unwrap();
 
         // add client
-        let result = distributor.add_client(addr, "localhost", tx.clone()).unwrap();
+        let result = distributor
+            .add_client(addr, "localhost", tx.clone())
+            .unwrap();
         assert_eq!(result, 0);
 
         // too many clients
@@ -240,7 +248,6 @@ mod tests {
             let result = distributor.get_client("localhost", i as u16);
             assert!(result.is_ok());
         }
-
 
         let addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 9999);
         let tx = tokio::sync::mpsc::unbounded_channel().0;
@@ -319,4 +326,3 @@ mod tests {
         assert_eq!(result, Err(DistributorError::ServerNotFound));
     }
 }
-
