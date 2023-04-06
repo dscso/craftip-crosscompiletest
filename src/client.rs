@@ -146,7 +146,7 @@ impl Client {
                                 let scope = self.clone();
                                 tokio::spawn(async move {
                                     if let Err(e) = scope.clone().handle_client(tx_clone, client_rx, packet.client_id).await {
-                                        panic!("An Error occured in the handle_client function: {}", e);
+                                        panic!("An Error occurred in the handle_client function: {}", e);
                                     }
                                 });
                             }
@@ -211,7 +211,10 @@ impl Client {
                     //tracing::info!("Sending packet to client: {:?}", pkg);
                     match pkg {
                         ChannelMessage::Packet(data) => {
-                            mc_server.write_all(&data).await?;
+                            if let Err(err) = mc_server.write_all(&data).await {
+                                tracing::error!("write_all failed: {}", err);
+                                return Err(err.into());
+                            }
                         }
                         ChannelMessage::Close => {
                             break;
@@ -219,7 +222,13 @@ impl Client {
                     }
                 }
                 n = mc_server.read(&mut buf) => {
-                    let n = n?;
+                    let n = match n {
+                        Ok(n) => n,
+                        Err(err) => {
+                            tracing::error!("read failed: {}", err);
+                            break;
+                        }
+                    };
                     if n == 0 {
                         tracing::info!("Minecraft server closed connection!");
                         break; // server 2 has closed the connection
@@ -242,7 +251,10 @@ impl Client {
             length: 0,
             client_id,
         });
-        tx.send(ChannelMessage::Packet(packet))?;
+        if let Err(err) = tx.send(ChannelMessage::Packet(packet)) {
+            tracing::error!("tx.send failed: {}", err);
+            return Err(err.into());
+        }
 
         self.state.lock().await.remove_connection(client_id);
         Ok(())

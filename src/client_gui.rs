@@ -313,7 +313,7 @@ impl ServerPanel {
                             server: self.server.clone(),
                             local: self.local.clone(),
                         }))
-                        .expect("failed to send disconnect event");
+                            .expect("failed to send disconnect event");
                     }
                     ServerState::Disconnected => {
                         self.state = ServerState::Connecting;
@@ -321,7 +321,7 @@ impl ServerPanel {
                             server: self.server.clone(),
                             local: self.local.clone(),
                         }))
-                        .expect("failed to send disconnect event");
+                            .expect("failed to send disconnect event");
                     }
                     _ => unreachable!("invalid state"),
                 }
