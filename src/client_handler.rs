@@ -235,10 +235,13 @@ impl ProxyClient {
                                     let client_id = packet.client_id;
                                     let mc_packet = SocketPacket::MCData(MinecraftDataPacket::from(packet));
                                     let host = &self.hostname;
-                                    self.distributor
+                                    if let Err(err) = self.distributor
                                         .lock()
                                         .await
-                                        .send_to_client(host, client_id, &mc_packet)?
+                                        .send_to_client(host, client_id, &mc_packet) {
+                                            tracing::error!("could not send to client {}", err);
+                                            break;
+                                        }
                                 }
                                 packet => {
                                     tracing::info!("Received proxy packet: {:?}", packet);
@@ -292,7 +295,13 @@ pub async fn process_socket_connection(
             client.handle().await?;
         }
         SocketPacket::ProxyHello(packet) => {
-            let mut client = ProxyClient::new(distributor.clone(), frames, packet).await?;
+            let mut client = match ProxyClient::new(distributor.clone(), frames, packet).await {
+                Ok(client) => client,
+                Err(err) => {
+                    tracing::info!("Server not found! {}", err);
+                    return Ok(());
+                }
+            };
             client.handle().await?;
         }
         _ => {
