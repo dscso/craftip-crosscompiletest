@@ -239,8 +239,7 @@ impl ProxyClient {
                                         .lock()
                                         .await
                                         .send_to_client(host, client_id, &mc_packet) {
-                                            tracing::error!("could not send to client {}", err);
-                                            break;
+                                            tracing::warn!("could not send to client {}, maybe already disconnected?", err);
                                         }
                                 }
                                 packet => {
