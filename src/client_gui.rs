@@ -16,7 +16,7 @@ use crate::gui::gui_channel::{
 };
 use crate::gui::gui_elements::popup;
 use crate::gui::login::LoginPanel;
-use eframe::egui;
+use eframe::{egui, Theme};
 use eframe::egui::{CentralPanel, Color32, Layout, RichText, Ui};
 use eframe::emath::Align;
 use tokio::sync::mpsc;
@@ -37,7 +37,7 @@ pub async fn main() -> Result<(), eframe::Error> {
 
     let options = eframe::NativeOptions {
         initial_window_size: Some(egui::vec2(400.0, 600.0)),
-        //default_theme: Theme::Light,
+        default_theme: Theme::Light,
         ..Default::default()
     };
     let (gui_tx, gui_rx) = mpsc::unbounded_channel();
@@ -78,18 +78,21 @@ impl MyApp {
                 server: "myserver.craftip.net".to_string(),
                 connected: 0,
                 local: "127.0.0.1:25564".to_string(),
+                error: None,
             },
             ServerPanel {
                 state: ServerState::Disconnected,
                 server: "myserver2.craftip.net".to_string(),
                 connected: 0,
                 local: "localhost:25565".to_string(),
+                error: None,
             },
             ServerPanel {
                 state: ServerState::Disconnected,
                 server: "myserver3.craftip.net".to_string(),
                 connected: 0,
                 local: "localhost:25565".to_string(),
+                error: None,
             },
         ];
         Self {
@@ -121,14 +124,15 @@ impl eframe::App for MyApp {
             match event {
                 GuiChangeEvent::Connected => {
                     tracing::info!("Connected to server!");
+                    self.servers.iter_mut().for_each(|s| s.error = None);
                     self.set_active_server(|s| {
                         s.state = ServerState::Connected;
+                        s.connected = 0;
                     });
                 }
                 GuiChangeEvent::Disconnected => {
                     self.set_active_server(|s| {
                         s.state = ServerState::Disconnected;
-                        s.connected = 0;
                     });
                 }
                 GuiChangeEvent::Stats(stats) => {
@@ -137,7 +141,10 @@ impl eframe::App for MyApp {
                     });
                 }
                 GuiChangeEvent::Error(err) => {
-                    self.error = Some(err);
+                    self.set_active_server(|s| {
+                        s.error = Some(err);
+                    });
+                    //self.error = Some(err);
                 }
                 _ => {
                     println!("Unhandled event: {:?}", event);
@@ -189,6 +196,7 @@ struct ServerPanel {
     connected: u16,
     local: String,
     state: ServerState,
+    error: Option<String>,
 }
 
 impl Default for ServerPanel {
@@ -198,6 +206,7 @@ impl Default for ServerPanel {
             server: String::new(),
             connected: 0,
             local: String::new(),
+            error: None,
         }
     }
 }
@@ -298,34 +307,41 @@ impl ServerPanel {
                 ServerState::Connected => ("Disconnect", true),
                 ServerState::Disconnecting => ("Disconnecting...", false),
             };
-            ui.set_enabled(enabled);
-            if ui
-                .add_sized(
-                    egui::vec2(ui.available_width(), 30.0),
-                    egui::Button::new(btn_txt),
-                )
-                .clicked()
-            {
-                match self.state {
-                    ServerState::Connected => {
-                        self.state = ServerState::Disconnecting;
-                        tx.send(GuiTriggeredEvent::Disconnect(Server {
-                            server: self.server.clone(),
-                            local: self.local.clone(),
-                        }))
-                            .expect("failed to send disconnect event");
-                    }
-                    ServerState::Disconnected => {
-                        self.state = ServerState::Connecting;
-                        tx.send(GuiTriggeredEvent::Connect(Server {
-                            server: self.server.clone(),
-                            local: self.local.clone(),
-                        }))
-                            .expect("failed to send disconnect event");
-                    }
-                    _ => unreachable!("invalid state"),
+            ui.vertical(|ui| {
+                // center error
+                if let Some(error) = self.error.clone() {
+                    ui.label(RichText::new(error).color(Color32::RED));
                 }
-            }
+                ui.set_enabled(enabled);
+                if ui
+                    .add_sized(
+                        egui::vec2(ui.available_width(), 30.0),
+                        egui::Button::new(btn_txt),
+                    )
+                    .clicked()
+                {
+                    self.error = None;
+                    match self.state {
+                        ServerState::Connected => {
+                            self.state = ServerState::Disconnecting;
+                            tx.send(GuiTriggeredEvent::Disconnect(Server {
+                                server: self.server.clone(),
+                                local: self.local.clone(),
+                            }))
+                                .expect("failed to send disconnect event");
+                        }
+                        ServerState::Disconnected => {
+                            self.state = ServerState::Connecting;
+                            tx.send(GuiTriggeredEvent::Connect(Server {
+                                server: self.server.clone(),
+                                local: self.local.clone(),
+                            }))
+                                .expect("failed to send disconnect event");
+                        }
+                        _ => unreachable!("invalid state"),
+                    }
+                }
+            });
         });
     }
 }

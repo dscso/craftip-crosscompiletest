@@ -1,0 +1,7 @@
+version: "3"
+services:
+  app:
+    build: .
+    command: server 0.0.0.0:25565
+    ports:
+      - "25565:25565"
