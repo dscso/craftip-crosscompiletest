@@ -84,7 +84,7 @@ impl MyApp {
                 state: ServerState::Disconnected,
                 server: "myserver2.craftip.net".to_string(),
                 connected: 0,
-                local: "localhost:25565".to_string(),
+                local: "localhost:25564".to_string(),
                 error: None,
             },
             ServerPanel {
