@@ -15,16 +15,24 @@ docker run -v $(pwd)/target-cross:/build/target                               \
            dscso/rust-crosscompiler:latest                                    \
            sleep infinity
 
-export runincontainer="docker exec -it crosscompiler /bin/bash -c "
+export cargocommand="source /entrypoint.sh && cargo build --bin client-gui --features gui --config /root/.cargo/config"
 
-echo "Container running... Building application... x86_64-apple-darwin"
-$runincontainer "source /entrypoint.sh && cargo build --target=x86_64-apple-darwin --bin client-gui --features gui --config /root/.cargo/config" # --release
-
-echo "Container running... Building application... aarch64-apple-darwin"
-$runincontainer "source /entrypoint.sh && cargo build --target=aarch64-apple-darwin --bin client-gui --features gui --config /root/.cargo/config" # --release
+if [ "$1" == "release" ]; then
+  echo "Building release version!"
+  export cargocommand="$cargocommand --release"
+fi
+echo $cargocommand
+export runincontainer="docker exec -it crosscompiler "
 
 echo "Container running... Building application... x86_64-pc-windows-gnu"
-$runincontainer "source /entrypoint.sh && cargo build --target=x86_64-pc-windows-gnu --bin client-gui --features gui --config /root/.cargo/config" # --release
+$runincontainer /bin/bash -c "$cargocommand --target=x86_64-pc-windows-gnu"
+
+echo "Container running... Building application... x86_64-apple-darwin"
+$runincontainer /bin/bash -c "$cargocommand --target=x86_64-apple-darwin"
+exit 1
+echo "Container running... Building application... aarch64-apple-darwin"
+$runincontainer /bin/bash -c "$cargocommand --target=aarch64-apple-darwin"
+
 
 docker stop crosscompiler
 docker rm crosscompiler
