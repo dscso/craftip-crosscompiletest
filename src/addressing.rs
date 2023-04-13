@@ -1,11 +1,29 @@
-use crate::socket_packet::{ChannelMessage, SocketPacket};
 use std::collections::HashMap;
+use std::fmt;
 use std::net::SocketAddr;
+
+use futures::TryStreamExt;
 use thiserror::Error;
 use tokio::sync::mpsc;
 
+use crate::addressing::DistributorError::UnknownError;
+use crate::socket_packet::{ChannelMessage, SocketPacket};
+
 pub type Tx = mpsc::UnboundedSender<ChannelMessage<SocketPacket>>;
 pub type Rx = mpsc::UnboundedReceiver<ChannelMessage<SocketPacket>>;
+
+/// creates an error string with the file and line number
+#[macro_export]
+macro_rules! distributor_error {
+    ($($arg:tt)*) => ({
+        |e| {
+            use crate::addressing::DistributorError;
+            DistributorError::UnknownError(format!("{}:{} {}: {e}", file!(), line!(), format_args!($($arg)*)))
+        }
+    })
+}
+
+
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum DistributorError {
@@ -13,8 +31,6 @@ pub enum DistributorError {
     ClientNotFound,
     #[error("Server Not found")]
     ServerNotFound,
-    #[error("ClientAlreadyConnected")]
-    ClientAlreadyConnected,
     #[error("ServerAlreadyConnected")]
     ServerAlreadyConnected,
     #[error("ClientNotConnected")]
@@ -24,7 +40,7 @@ pub enum DistributorError {
     #[error("TooManyClients")]
     TooManyClients,
     #[error("UnknownError")]
-    UnknownError,
+    UnknownError(String),
 }
 
 type ServerHostname = String;
@@ -95,28 +111,41 @@ impl Distributor {
         }
         Err(DistributorError::ClientNotFound)
     }
+    /// removes the server from the distributor
+    /// # Errors
+    /// Can return a DistributorError::ServerNotFound if the server is not connected
+    ///
     pub fn remove_server(&mut self, hostname: &str) -> Result<(), DistributorError> {
         self.servers.remove(hostname);
-        for client in self
+        let server_clients = self
             .server_clients
             .get_mut(hostname)
-            .ok_or(DistributorError::ServerNotFound)?
-        {
+            .ok_or(DistributorError::ServerNotFound)?;
+        for client in server_clients {
             if client.is_some() {
+                // get client ref
+                let client = client.as_ref()
+                    .ok_or(DistributorError::ClientNotFound)
+                    .map_err(distributor_error!("client in server_clients but not in clients!"))?;
+                // remove client from clients
                 let client = self
                     .clients
-                    .remove(client.as_ref().ok_or(DistributorError::ClientNotFound)?);
-                if let Some(client) = client {
-                    let (tx, _) = client;
-                    tx.send(ChannelMessage::Close)
-                        .map_err(|_| (DistributorError::ClientNotFound))?;
-                }
+                    .remove(client);
+                // get tx
+                let client = client.ok_or(DistributorError::ClientNotFound)
+                    .map_err(distributor_error!("client in server_clients but not in clients!"))?;
+
+                let tx = client.0;
+                tx.send(ChannelMessage::Close)
+                    .map_err(distributor_error!("Channel is already closed!"))?
             }
         }
         self.server_clients.remove(hostname);
         Ok(())
     }
-
+    /// sends a packet to the craftip client
+    /// # Errors
+    /// Can return a DistributorError::ServerNotFound if the server is not connected
     pub fn send_to_server(
         &mut self,
         server: &str,
@@ -140,12 +169,15 @@ impl Distributor {
     ) -> Result<(), DistributorError> {
         let client = self.get_client(hostname, client_id)?;
         tracing::debug!("MC -> Client");
-        if let Err(e) = client.send(ChannelMessage::Packet(packet.clone())) {
-            tracing::error!("could not send: {}", e);
-            return Err(DistributorError::UnknownError);
-        }
+        client.send(ChannelMessage::Packet(packet.clone()))
+            .map_err(distributor_error!("Error in distributor send_to_client"))?;
         Ok(())
     }
+    /// gets the client for specific server and client id
+    /// # Errors
+    /// Can return a DistributorError::ServerNotFound if the server is not connected
+    /// Can return a DistributorError::ClientNotFound if the client is not connected
+    /// Can return a DistributorError::UnknownError if state is out of sync
     pub fn get_client(
         &mut self,
         hostname: &str,
@@ -157,7 +189,8 @@ impl Distributor {
                     let client = self
                         .clients
                         .get_mut(client)
-                        .expect("Error in distributor send_to_client");
+                        .ok_or(UnknownError("state out of sync!".to_string()))
+                        .map_err(distributor_error!(""))?;
                     return Ok(&mut client.0);
                 }
                 Err(DistributorError::ClientNotFound)
@@ -167,11 +200,39 @@ impl Distributor {
     }
 }
 
+// implement to string trait for distributor
+impl fmt::Display for Distributor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut servers = String::new();
+        for server in self.servers.iter() {
+            servers.push_str(&format!("{} ", server.0));
+            servers.push_str(" { ");
+            for client in self.server_clients.get(server.0).unwrap().iter() {
+                if let Some(client) = client {
+                    servers.push_str(&format!("{}, ", client));
+                }
+            }
+            servers.push_str(" } ");
+        }
+        let mut clients = String::new();
+        for client in self.clients.iter() {
+            clients.push_str(&format!("{} ", client.0));
+        }
+        write!(
+            f,
+            "Distributor {{ servers: {}, clients: {} }}",
+            servers, clients
+        )
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::net::SocketAddr;
     use std::net::{IpAddr, Ipv4Addr};
+    use std::net::SocketAddr;
+
+    use super::*;
 
     #[test]
     fn test_add_client() {

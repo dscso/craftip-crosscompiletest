@@ -1,14 +1,17 @@
 use std::error::Error;
+use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures::{SinkExt, StreamExt, TryFutureExt};
-use std::net::SocketAddr;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex};
+use tokio::time::timeout;
 use tokio_util::codec::Framed;
 
 use crate::addressing::{Distributor, DistributorError, Rx};
+use crate::distributor_error;
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
 use crate::packet_codec::PacketCodec;
 use crate::proxy::{
@@ -56,10 +59,7 @@ impl MCClient {
         hello_packet: MinecraftHelloPacket,
     ) -> Result<Self, DistributorError> {
         // Get the client socket address
-        let addr = frames.get_ref().peer_addr().map_err(|e| {
-            tracing::error!("could not get peer address, {}", e);
-            DistributorError::UnknownError
-        })?;
+        let addr = frames.get_ref().peer_addr().map_err(distributor_error!("could not get peer address"))?;
         let hostname = hello_packet.hostname.clone();
         let (tx, rx) = mpsc::unbounded_channel();
 
@@ -76,10 +76,7 @@ impl MCClient {
             .send_to_server(&hostname, SocketPacket::from(client_join_packet))
         {
             tracing::error!("could not send first packet to proxy {}", err);
-            if let Err(err) = frames.get_mut().shutdown().await {
-                tracing::error!("could not shutdown socket {}", err);
-            };
-            return Err(DistributorError::UnknownError);
+            frames.get_mut().shutdown().await.map_err(distributor_error!("could not shutdown socket"))?;
         }
 
         let client_id = id;
@@ -88,14 +85,7 @@ impl MCClient {
         let packet = SocketPacket::ProxyData(packet);
         if let Err(err) = distributor.lock().await.send_to_server(&hostname, packet) {
             tracing::error!("could not send first packet to proxy {}", err);
-            let _ = frames
-                .get_mut()
-                .shutdown()
-                .map_err(|e| {
-                    tracing::error!("could not shutdown socket {}", e);
-                })
-                .await;
-            return Err(DistributorError::UnknownError);
+            let _ = frames.get_mut().shutdown();
         }
 
         Ok(MCClient {
@@ -117,10 +107,7 @@ impl MCClient {
                         Some(ChannelMessage::Packet(pkg)) => {
                             self.frames.send(pkg).await?;
                         }
-                        _ => {
-                            tracing::info!("connection closed by another side of unbound channel");
-                            break;
-                        }
+                        _ => break,
                     }
                 }
                 result = self.frames.next() => match result {
@@ -159,11 +146,11 @@ impl MCClient {
             .await
             .send_to_server(&self.hostname, packet)
         {
-            tracing::error!("could not send disconnect packet to proxy {}", err);
+            tracing::info!("could not send disconnect packet to proxy {}", err);
         }
 
         if let Err(e) = self.distributor.lock().await.remove_client(&self.addr) {
-            tracing::error!("Error while removing mc client {}", e);
+            tracing::info!("Error while removing mc client {}", e);
         };
         Ok(())
     }
@@ -176,10 +163,7 @@ impl ProxyClient {
         packet: ProxyHelloPacket,
     ) -> Result<Self, DistributorError> {
         let (tx, rx) = mpsc::unbounded_channel();
-        let addr = frames.get_ref().peer_addr().map_err(|e| {
-            tracing::error!("could not get peer address, {}", e);
-            DistributorError::UnknownError
-        })?;
+        let addr = frames.get_ref().peer_addr().map_err(distributor_error!("could not get peer addr"))?;
         distributor.lock().await.add_server(&packet.hostname, tx)?;
 
         Ok(ProxyClient {
@@ -191,13 +175,13 @@ impl ProxyClient {
         })
     }
     /// HANDLE PROXY CLIENT
-    pub async fn handle(&mut self) -> Result<(), Box<dyn Error>> {
+    pub async fn handle(&mut self) -> Result<(), DistributorError> {
         loop {
             tokio::select! {
                 result = self.rx.recv() => {
                     match result {
                         Some(ChannelMessage::Packet(pkg)) => {
-                            self.frames.send(pkg).await?;
+                            self.frames.send(pkg).await.map_err(distributor_error!("could not send packet"))?;
                         }
                         _ => {
                             tracing::info!("connection closed by another side of unbound channel");
@@ -205,28 +189,31 @@ impl ProxyClient {
                         }
                     }
                 }
-                result = self.frames.next() => {
+                result = timeout(Duration::from_secs(60), self.frames.next()) => {
+                    // catching timeout error
+                    let result = match result {
+                        Ok(result) => result,
+                        Err(e) => {
+                            tracing::info!("connection to {} timed out {e}", self.addr);
+                            break;
+                        }
+                    };
                     match result {
                         Some(Ok(packet)) => {
                             match packet {
                                 SocketPacket::ProxyDisconnect(packet) => {
-                                    tracing::info!("Received proxy disconnect packet: {:?}", packet);
-
                                     match self.distributor.lock().await.get_client(
                                         &self.hostname,
                                         packet.client_id,
                                     ) {
                                         Ok(client) => {
-                                            if let Err(e) = client.send(ChannelMessage::Close) {
-                                                tracing::error!("could not send close to client {}", e);
-                                                break;
-                                            }
+                                            client.send(ChannelMessage::Close)
+                                                .map_err(distributor_error!("could not send packet"))?;
                                         }
-                                        Err(DistributorError::ClientNotFound) => {
-                                            // do nothing if client already disconnected
-                                        }
-                                        Err(e) => {
-                                            tracing::error!("could not get client {}", e);
+                                        // do nothing if client already disconnected
+                                        Err(DistributorError::ClientNotFound) => {}
+                                        res => {
+                                            res.map_err(distributor_error!("could not send packet"))?;
                                             break;
                                         }
                                     }
@@ -242,25 +229,28 @@ impl ProxyClient {
                                             tracing::warn!("could not send to client {}, maybe already disconnected?", err);
                                         }
                                 }
+                                SocketPacket::ProxyPing(packet) => {
+                                    self.frames.send(SocketPacket::ProxyPong(packet)).await
+                                        .map_err(distributor_error!("could not send packet"))?
+                                }
                                 packet => {
                                     tracing::info!("Received proxy packet: {:?}", packet);
                                 }
                             }
                         }
-                        _ => {
-                            // either the channel was closed or the other side closed the channel
-                            tracing::info!("connection closed by another side of unbound channel");
-                            break;
-                        }
+                        // either the channel was closed or the other side closed the channel
+                        _ => break
                     }
                 }
             }
         }
-        tracing::info!("removing Proxy {} from state", self.addr);
-        if let Err(e) = self.distributor.lock().await.remove_server(&self.hostname) {
-            tracing::error!("could not remove proxy: {}", e);
-        }
         Ok(())
+    }
+    pub async fn close_connection(&mut self) {
+        tracing::info!("removing proxy client {} from state", self.hostname);
+        if let Err(e) = self.distributor.lock().await.remove_server(&self.hostname) {
+            tracing::error!("Error while removing proxy client {}", e);
+        };
     }
 }
 
@@ -272,11 +262,9 @@ pub async fn process_socket_connection(
     socket: TcpStream,
     distributor: Arc<Mutex<Distributor>>,
 ) -> Result<(), Box<dyn Error>> {
-    tracing::info!("distributor: {:?}", distributor.lock().await);
     let mut frames = Framed::new(socket, PacketCodec::new(1024 * 8));
     // In a loop, read data from the socket and write the data back.
     let packet = frames.next().await.ok_or("No first packet received")??;
-    tracing::info!("received new packet: {:?}", packet);
     match packet {
         SocketPacket::MCHello(packet) => {
             let mut client = match MCClient::new(distributor.clone(), frames, packet.clone()).await
@@ -291,9 +279,11 @@ pub async fn process_socket_connection(
                     return Err(format!("could not create new client {:?}", err).into());
                 }
             };
+            tracing::info!("distributor: {}", distributor.lock().await);
             client.handle().await?;
         }
         SocketPacket::ProxyHello(packet) => {
+            tracing::info!("Proxy client connected for {} from {}", packet.hostname, frames.get_ref().peer_addr()?);
             let mut client = match ProxyClient::new(distributor.clone(), frames, packet).await {
                 Ok(client) => client,
                 Err(err) => {
@@ -301,7 +291,16 @@ pub async fn process_socket_connection(
                     return Ok(());
                 }
             };
-            client.handle().await?;
+            match client.handle().await {
+                Ok(_) => {}
+                Err(DistributorError::UnknownError(e)) => {
+                    tracing::error!("Unknown error: {}", e);
+                }
+                Err(e) => {
+                    tracing::info!("{}", e);
+                }
+            }
+            client.close_connection().await;
         }
         _ => {
             tracing::error!("Unknown protocol");
@@ -309,6 +308,5 @@ pub async fn process_socket_connection(
         }
     };
 
-    tracing::info!("waiting for new packets");
     Ok(())
 }

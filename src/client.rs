@@ -1,17 +1,20 @@
 use std::collections::HashMap;
 use std::error::Error;
+use std::sync::Arc;
+use std::time::Duration;
+
+use futures::SinkExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::sync::mpsc;
+use tokio::sync::Mutex;
+use tokio::time::timeout;
+use tokio_stream::StreamExt;
+use tokio_util::codec::Framed;
 
 use crate::packet_codec::PacketCodec;
 use crate::proxy;
 use crate::socket_packet::{ChannelMessage, SocketPacket};
-use futures::SinkExt;
-use std::sync::Arc;
-use tokio::net::TcpStream;
-use tokio::sync::mpsc;
-use tokio::sync::Mutex;
-use tokio_stream::StreamExt;
-use tokio_util::codec::Framed;
 
 #[derive(Debug)]
 pub enum Stats {
@@ -134,60 +137,72 @@ impl Client {
                         }
                     }
                 }
-                result = proxy.next() => match result {
-                    Some(Ok(msg)) => {
-                        match msg {
-                            SocketPacket::ProxyJoin(packet) => {
-                                let (client_tx, client_rx) = mpsc::unbounded_channel();
-                                {
-                                    self.state.lock().await.add_connection(packet.client_id, client_tx);
+                result = timeout(Duration::from_secs(10), proxy.next()) => {
+                    let result = match result {
+                        Ok(result) => result,
+                        Err(_) => {
+                            proxy.send(SocketPacket::ProxyPing(123)).await?;
+                            continue;
+                        }
+                    };
+                    match result {
+                        Some(Ok(msg)) => {
+                            match msg {
+                                SocketPacket::ProxyJoin(packet) => {
+                                    let (client_tx, client_rx) = mpsc::unbounded_channel();
+                                    {
+                                        self.state.lock().await.add_connection(packet.client_id, client_tx);
+                                    }
+                                    let tx_clone = tx.clone();
+                                    let scope = self.clone();
+                                    tokio::spawn(async move {
+                                        if let Err(e) = scope.clone().handle_client(tx_clone, client_rx, packet.client_id).await {
+                                            panic!("An Error occurred in the handle_client function: {}", e);
+                                        }
+                                    });
                                 }
-                                let tx_clone = tx.clone();
-                                let scope = self.clone();
-                                tokio::spawn(async move {
-                                    if let Err(e) = scope.clone().handle_client(tx_clone, client_rx, packet.client_id).await {
-                                        panic!("An Error occurred in the handle_client function: {}", e);
-                                    }
-                                });
-                            }
-                            SocketPacket::ProxyData(packet) => {
-                                match self.state.lock().await.get_connection(packet.client_id) {
-                                    Some(tx) => {
-                                        tx.send(ChannelMessage::Packet(packet.data.to_vec()))?;
-                                    }
-                                    None => {
-                                        tracing::error!("connection to minecraft server not found!");
+                                SocketPacket::ProxyData(packet) => {
+                                    match self.state.lock().await.get_connection(packet.client_id) {
+                                        Some(tx) => {
+                                            tx.send(ChannelMessage::Packet(packet.data.to_vec()))?;
+                                        }
+                                        None => {
+                                            tracing::error!("connection to minecraft server not found!");
+                                        }
                                     }
                                 }
-                            }
-                            SocketPacket::ProxyDisconnect(packet) => {
-                                match self.state.lock().await.connections.get(&packet.client_id) {
-                                    Some(tx) => {
-                                        tx.send(ChannelMessage::Close)?;
-                                    }
-                                    None => {
-                                        tracing::debug!("connection already closed!")
-                                    }
+                                SocketPacket::ProxyDisconnect(packet) => {
+                                    match self.state.lock().await.connections.get(&packet.client_id) {
+                                        Some(tx) => {
+                                            tx.send(ChannelMessage::Close)?;
+                                        }
+                                        None => {
+                                            tracing::debug!("connection already closed!")
+                                        }
 
+                                    }
                                 }
-                            }
-                            _ => {
-                                unimplemented!("Message not implemented!")
+                                SocketPacket::ProxyPong(ping) => {
+                                    tracing::info!("pong {}", ping);
+                                }
+                                _ => {
+                                    unimplemented!("Message not implemented!")
+                                }
                             }
                         }
+                        // An error occurred.
+                        Some(Err(e)) => {
+                            tracing::error!(
+                                "an error occurred while processing messages error = {:?}",
+                                e
+                            );
+                        }
+                        // The stream has been exhausted.
+                        None => {
+                            tracing::info!("Proxy has closed the connection");
+                            break
+                        },
                     }
-                    // An error occurred.
-                    Some(Err(e)) => {
-                        tracing::error!(
-                            "an error occurred while processing messages error = {:?}",
-                            e
-                        );
-                    }
-                    // The stream has been exhausted.
-                    None => {
-                        tracing::info!("Proxy has closed the connection");
-                        break
-                    },
                 },
             }
         }

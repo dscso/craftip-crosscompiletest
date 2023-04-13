@@ -1,7 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
 
 use eframe::{egui, Theme};
 use eframe::egui::{CentralPanel, Color32, Layout, RichText, Ui};

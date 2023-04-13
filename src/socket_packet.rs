@@ -1,15 +1,18 @@
-use crate::cursor::{CustomCursor, CustomCursorMethods};
-use crate::datatypes::PacketError;
-use crate::datatypes::Protocol;
-use bytes::{Buf, BytesMut};
-use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::mem::size_of;
 
+use bytes::{Buf, BytesMut};
+use serde::{Deserialize, Serialize};
+
+use crate::cursor::{CustomCursor, CustomCursorMethods};
+use crate::datatypes::PacketError;
+use crate::datatypes::Protocol;
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
 use crate::proxy::{
     ProxyClientDisconnectPacket, ProxyClientJoinPacket, ProxyDataPacket, ProxyHelloPacket,
 };
+
+pub type PingPacket = u16;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub enum SocketPacket {
@@ -19,6 +22,8 @@ pub enum SocketPacket {
     ProxyJoin(ProxyClientJoinPacket),
     ProxyDisconnect(ProxyClientDisconnectPacket),
     ProxyData(ProxyDataPacket),
+    ProxyPing(PingPacket),
+    ProxyPong(PingPacket),
     Unknown,
 }
 
@@ -90,7 +95,7 @@ impl SocketPacket {
             &cursor.get_ref()
                 [cursor.position() as usize..cursor.position() as usize + length as usize],
         )
-        .map_err(|_| PacketError::NotValid)?;
+            .map_err(|_| PacketError::NotValid)?;
         buf.advance(cursor.position() as usize + length as usize);
         // decode bincode packet
         Ok(result)

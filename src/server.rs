@@ -1,3 +1,12 @@
+use std::env;
+use std::error::Error;
+use std::sync::Arc;
+
+use tokio::net::TcpListener;
+use tokio::sync::Mutex;
+
+use crate::addressing::Distributor;
+
 mod addressing;
 mod client_handler;
 mod cursor;
@@ -7,14 +16,7 @@ mod packet_codec;
 mod proxy;
 mod socket_packet;
 mod test;
-
-use tokio::net::TcpListener;
-
-use crate::addressing::Distributor;
-use std::env;
-use std::error::Error;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+mod util;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
