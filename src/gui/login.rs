@@ -5,7 +5,7 @@ use crate::gui;
 use crate::gui::gui_elements::popup;
 
 pub struct LoginPanel {
-    pub(crate) open: bool,
+    pub open: bool,
     email: String,
     password: String,
 }

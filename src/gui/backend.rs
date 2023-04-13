@@ -1,6 +1,5 @@
 use std::sync::{Arc, Mutex};
 
-use eframe::egui;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -12,19 +11,11 @@ use crate::GuiState;
 pub struct Controller {
     pub gui_rx: UnboundedReceiver<GuiTriggeredEvent>,
     pub state: Arc<Mutex<GuiState>>,
-    pub ctx: Option<egui::Context>,
 }
 
 impl Controller {
     pub fn new(gui_rx: UnboundedReceiver<GuiTriggeredEvent>, state: Arc<Mutex<GuiState>>) -> Self {
-        Self {
-            gui_rx,
-            state,
-            ctx: None,
-        }
-    }
-    pub fn set_ctx(&mut self, ctx: egui::Context) {
-        self.ctx = Some(ctx);
+        Self { gui_rx, state }
     }
 
     pub async fn update(&mut self) {
@@ -60,10 +51,6 @@ impl Controller {
                             println!("Unhandled stats: {:?}", result);
                         }
                     }
-
-                    if let Some(ctx) = &self.ctx {
-                        ctx.request_repaint();
-                    }
                 }
                 event = self.gui_rx.recv() => {
                     if event.is_none() {
@@ -72,23 +59,19 @@ impl Controller {
                     }
                     let event = event.unwrap();
                     match event {
-                        GuiTriggeredEvent::FrameContext(ctx) => {
-                            self.set_ctx(ctx);
-                        }
                         GuiTriggeredEvent::Connect(server) => {
                             // sleep async 1 sec
                             tracing::info!("Connecting to server: {:?}", server);
 
-                            //
                             let (control_tx_new, control_rx) = mpsc::unbounded_channel();
                             control_tx = Some(control_tx_new);
 
-                            let server_shadow = server.clone();
-                            let ctx = self.ctx.clone();
+                            let hostname = server.server.clone();
+                            let local = server.local.clone();
                             let stats_tx_clone = stats_tx.clone();
                             let state = self.state.clone();
                             tokio::spawn(async move {
-                                let mut client = Client::new(server_shadow.server.clone(), server_shadow.local.clone(), stats_tx_clone).await;
+                                let mut client = Client::new(hostname, local, stats_tx_clone).await;
                                 if let Err(e) = client.connect(control_rx).await {
                                     tracing::error!("Error connecting to server: {:?}", e);
                                     state.lock().unwrap().set_active_server(|s| {
@@ -98,9 +81,7 @@ impl Controller {
                                 state.lock().unwrap().set_active_server(|s| {
                                     s.state = ServerState::Disconnected;
                                 });
-                                if let Some(ctx) = ctx {
-                                    ctx.request_repaint();
-                                }
+                                state.lock().unwrap().request_repaint();
                             });
                         }
                         GuiTriggeredEvent::Disconnect(server) => {
@@ -114,11 +95,10 @@ impl Controller {
                             println!("Unhandled event: {:?}", event);
                         }
                     }
-                    if let Some(ctx) = &self.ctx {
-                        ctx.request_repaint();
-                    }
                 }
             }
+            // after each event received, repaint!
+            self.state.lock().unwrap().request_repaint();
         }
     }
 }

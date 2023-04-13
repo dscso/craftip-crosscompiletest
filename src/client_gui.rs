@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use eframe::{egui, Theme};
 use eframe::egui::{CentralPanel, Color32, Layout, RichText, Ui};
@@ -52,8 +53,8 @@ pub async fn main() -> Result<(), eframe::Error> {
         "CraftIP",
         options,
         Box::new(|cc| {
-            let frame = cc.egui_ctx.clone();
-            gui_tx.send(GuiTriggeredEvent::FrameContext(frame)).unwrap();
+            // add context to state to redraw from other threads
+            state.lock().unwrap().set_ctx(cc.egui_ctx.clone());
             Box::new(MyApp::new(gui_tx, state))
         }),
     )
@@ -63,6 +64,7 @@ pub struct GuiState {
     loading: bool,
     error: Option<String>,
     servers: Vec<ServerPanel>,
+    ctx: Option<egui::Context>,
 }
 
 impl GuiState {
@@ -94,6 +96,7 @@ impl GuiState {
             loading: false,
             error: None,
             servers: servers.clone(),
+            ctx: None,
         }
     }
     // set_active_server pass in closure the function that will be called on the active server
@@ -103,6 +106,15 @@ impl GuiState {
             .find(|s| s.state != ServerState::Disconnected)
             .map(closure)
             .expect("No active server!");
+    }
+    fn set_ctx(&mut self, ctx: egui::Context) {
+        self.ctx = Some(ctx);
+    }
+    fn request_repaint(&mut self) {
+        match &self.ctx {
+            Some(ctx) => ctx.request_repaint(),
+            None => tracing::warn!("No repaint context set!"),
+        }
     }
 }
 
