@@ -11,9 +11,9 @@ mod test;
 use tokio::net::TcpListener;
 
 use crate::addressing::Distributor;
+use std::env;
 use std::error::Error;
 use std::sync::Arc;
-use std::{env, result};
 use tokio::sync::Mutex;
 
 #[tokio::main]

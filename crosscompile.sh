@@ -29,7 +29,7 @@ $runincontainer /bin/bash -c "$cargocommand --target=x86_64-pc-windows-gnu"
 
 echo "Container running... Building application... x86_64-apple-darwin"
 $runincontainer /bin/bash -c "$cargocommand --target=x86_64-apple-darwin"
-exit 1
+
 echo "Container running... Building application... aarch64-apple-darwin"
 $runincontainer /bin/bash -c "$cargocommand --target=aarch64-apple-darwin"
 

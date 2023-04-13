@@ -80,7 +80,7 @@ impl Distributor {
     pub fn remove_client(&mut self, addr: &SocketAddr) -> Result<(), DistributorError> {
         let (_, hostname) = self
             .clients
-            .remove(&addr)
+            .remove(addr)
             .ok_or(DistributorError::ClientNotFound)?;
 
         if let Some(clients) = self.server_clients.get_mut(&hostname) {
@@ -217,7 +217,7 @@ mod tests {
         );
 
         // add duplicate server
-        let result = distributor.add_server("localhost", tx.clone());
+        let result = distributor.add_server("localhost", tx);
         assert_eq!(result, Err(DistributorError::ServerAlreadyConnected));
     }
 
@@ -225,7 +225,7 @@ mod tests {
     fn test_remove_client() {
         let mut distributor = Distributor::new();
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1234);
-        let tx = tokio::sync::mpsc::unbounded_channel().0;
+        let tx = mpsc::unbounded_channel().0;
 
         // add server
         distributor.add_server("localhost", tx.clone()).unwrap();
@@ -245,13 +245,13 @@ mod tests {
 
         for i in 0..=99 {
             let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1234 + i);
-            let result = distributor.get_client("localhost", i as u16);
+            let result = distributor.get_client("localhost", i);
             assert!(result.is_ok());
         }
 
         let addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 9999);
-        let tx = tokio::sync::mpsc::unbounded_channel().0;
-        let result = distributor.add_client(addr1, "localhost", tx.clone());
+        let tx = mpsc::unbounded_channel().0;
+        let result = distributor.add_client(addr1, "localhost", tx);
         assert_eq!(result, Err(DistributorError::TooManyClients));
 
         // remove client
@@ -261,27 +261,27 @@ mod tests {
         assert_eq!(result, None);
 
         let addr2 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1000);
-        let tx = tokio::sync::mpsc::unbounded_channel().0;
-        let result = distributor.add_client(addr2, "localhost", tx.clone());
+        let tx = mpsc::unbounded_channel().0;
+        let result = distributor.add_client(addr2, "localhost", tx);
         assert_eq!(result, Ok(0));
 
-        assert!(distributor.clients.is_empty() == false);
+        assert!(!distributor.clients.is_empty());
 
         // remove non-existent client
-        let addr_non_existant = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 4321);
-        let result = distributor.remove_client(&addr_non_existant);
+        let addr_non_existent = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 4321);
+        let result = distributor.remove_client(&addr_non_existent);
         assert_eq!(result, Err(DistributorError::ClientNotFound));
     }
 
     #[test]
     fn test_remove_server() {
         let mut distributor = Distributor::new();
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let (tx_cli, mut rx_cli) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx_cli, mut rx_cli) = mpsc::unbounded_channel();
 
         // add server
         distributor.add_server("localhost", tx.clone()).unwrap();
-        distributor.add_server("localhost2", tx.clone()).unwrap();
+        distributor.add_server("localhost2", tx).unwrap();
         // add clients
         for i in 0..=99 {
             let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1234 + i);

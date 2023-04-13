@@ -16,9 +16,9 @@ use crate::gui::gui_channel::{
 };
 use crate::gui::gui_elements::popup;
 use crate::gui::login::LoginPanel;
-use eframe::{egui, Theme};
 use eframe::egui::{CentralPanel, Color32, Layout, RichText, Ui};
 use eframe::emath::Align;
+use eframe::{egui, Theme};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -328,7 +328,7 @@ impl ServerPanel {
                                 server: self.server.clone(),
                                 local: self.local.clone(),
                             }))
-                                .expect("failed to send disconnect event");
+                            .expect("failed to send disconnect event");
                         }
                         ServerState::Disconnected => {
                             self.state = ServerState::Connecting;
@@ -336,7 +336,7 @@ impl ServerPanel {
                                 server: self.server.clone(),
                                 local: self.local.clone(),
                             }))
-                                .expect("failed to send disconnect event");
+                            .expect("failed to send disconnect event");
                         }
                         _ => unreachable!("invalid state"),
                     }

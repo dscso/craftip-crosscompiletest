@@ -93,7 +93,7 @@ impl SocketPacket {
         .map_err(|_| PacketError::NotValid)?;
         buf.advance(cursor.position() as usize + length as usize);
         // decode bincode packet
-        return Ok(result);
+        Ok(result)
     }
 }
 

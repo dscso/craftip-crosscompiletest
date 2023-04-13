@@ -1,15 +1,11 @@
 [package]
-name = "minecraft-server-forward"
-version = "0.1.0"
+name = "craftip"
+version = "0.0.1"
 edition = "2021"
 
 [[bin]]
 name = "server"
 path = "src/server.rs"
-
-[[bin]]
-name = "client"
-path = "src/client_cli.rs"
 
 
 [features]
@@ -38,3 +34,4 @@ bincode = "1.3.3"
 
 
 eframe = { version = "0.21.3", optional = true }
+reqwest = { version = "0.11", default-features = false, features = ["blocking", "json"] }

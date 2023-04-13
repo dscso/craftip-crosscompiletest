@@ -13,7 +13,7 @@ pub enum PacketCodecError {
     #[error("max line length exceeded")]
     MaxLineLengthExceeded,
     #[error("PacketCodecError")]
-    PacketCodecError(PacketError),
+    PacketCodec(PacketError),
     /// An IO error occurred.
     #[error("Io Error")]
     Io(io::Error),
@@ -37,7 +37,7 @@ impl From<io::Error> for PacketCodecError {
 
 impl From<PacketError> for PacketCodecError {
     fn from(e: PacketError) -> PacketCodecError {
-        PacketCodecError::PacketCodecError(e)
+        PacketCodecError::PacketCodec(e)
     }
 }
 
