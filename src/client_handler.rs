@@ -98,14 +98,14 @@ impl MCClient {
         })
     }
     /// HANDLE MC CLIENT
-    pub async fn handle(&mut self) -> Result<(), Box<dyn Error>> {
+    pub async fn handle(&mut self) -> Result<(), DistributorError> {
         loop {
             tokio::select! {
                 // A message was received from a peer. Send it to the current user.
                 result = self.rx.recv() => {
                     match result {
                         Some(ChannelMessage::Packet(pkg)) => {
-                            self.frames.send(pkg).await?;
+                            self.frames.send(pkg).await.map_err(distributor_error!("could not send packet"))?;
                         }
                         _ => break,
                     }
@@ -137,7 +137,10 @@ impl MCClient {
                 },
             }
         }
+        Ok(())
+    }
 
+    pub async fn close_connection(&mut self) -> Result<(), DistributorError> {
         tracing::info!("removing Minecraft client {} from state", self.addr);
         let packet = SocketPacket::from(ProxyClientDisconnectPacket::new(self.id));
         if let Err(err) = self
@@ -146,12 +149,12 @@ impl MCClient {
             .await
             .send_to_server(&self.hostname, packet)
         {
-            tracing::info!("could not send disconnect packet to proxy {}", err);
+            tracing::debug!("could not send disconnect packet to proxy {}", err);
         }
 
         if let Err(e) = self.distributor.lock().await.remove_client(&self.addr) {
-            tracing::info!("Error while removing mc client {}", e);
-        };
+            tracing::debug!("Error while removing mc client {}", e);
+        }
         Ok(())
     }
 }
@@ -280,7 +283,16 @@ pub async fn process_socket_connection(
                 }
             };
             tracing::info!("distributor: {}", distributor.lock().await);
-            client.handle().await?;
+            match client.handle().await {
+                Ok(_) => {}
+                Err(DistributorError::UnknownError(e)) => {
+                    tracing::error!("Unknown error: {}", e);
+                }
+                Err(e) => {
+                    tracing::info!("{}", e);
+                }
+            }
+            client.close_connection().await;
         }
         SocketPacket::ProxyHello(packet) => {
             tracing::info!("Proxy client connected for {} from {}", packet.hostname, frames.get_ref().peer_addr()?);
