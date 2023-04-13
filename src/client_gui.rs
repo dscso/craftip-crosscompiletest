@@ -1,5 +1,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
+use std::sync::{Arc, Mutex};
+
+use eframe::{egui, Theme};
+use eframe::egui::{CentralPanel, Color32, Layout, RichText, Ui};
+use eframe::emath::Align;
+use tokio::sync::mpsc;
+
+use crate::gui::gui_channel::{GuiTriggeredChannel, GuiTriggeredEvent, Server, ServerState};
+use crate::gui::gui_elements::popup;
+use crate::gui::login::LoginPanel;
+
 mod addressing;
 mod client;
 mod client_handler;
@@ -10,17 +21,6 @@ mod minecraft;
 mod packet_codec;
 mod proxy;
 mod socket_packet;
-
-use crate::gui::gui_channel::{
-    GuiChangeEvent, GuiTriggeredChannel, GuiTriggeredEvent, Server, ServerState,
-};
-use crate::gui::gui_elements::popup;
-use crate::gui::login::LoginPanel;
-use eframe::egui::{CentralPanel, Color32, Layout, RichText, Ui};
-use eframe::emath::Align;
-use eframe::{egui, Theme};
-use tokio::sync::mpsc;
-use tokio::sync::mpsc::UnboundedReceiver;
 
 #[tokio::main]
 pub async fn main() -> Result<(), eframe::Error> {
@@ -41,10 +41,10 @@ pub async fn main() -> Result<(), eframe::Error> {
         ..Default::default()
     };
     let (gui_tx, gui_rx) = mpsc::unbounded_channel();
-    let (bck_tx, bck_rx) = mpsc::unbounded_channel::<GuiChangeEvent>();
-
+    let state = Arc::new(Mutex::new(GuiState::new()));
+    let state_clone = state.clone();
     tokio::spawn(async move {
-        let mut controller = gui::backend::Controller::new(gui_rx, bck_tx);
+        let mut controller = gui::backend::Controller::new(gui_rx, state_clone);
         controller.update().await;
     });
 
@@ -54,25 +54,20 @@ pub async fn main() -> Result<(), eframe::Error> {
         Box::new(|cc| {
             let frame = cc.egui_ctx.clone();
             gui_tx.send(GuiTriggeredEvent::FrameContext(frame)).unwrap();
-            Box::new(MyApp::new(gui_tx, bck_rx))
+            Box::new(MyApp::new(gui_tx, state))
         }),
     )
 }
 
-struct MyApp {
-    login_panel: LoginPanel,
-    edit_panel: EditPanel,
+pub struct GuiState {
     loading: bool,
     error: Option<String>,
     servers: Vec<ServerPanel>,
-    tx: GuiTriggeredChannel,
-    rx: UnboundedReceiver<GuiChangeEvent>,
-    frames_rendered: usize,
 }
 
-impl MyApp {
-    fn new(tx: GuiTriggeredChannel, rx_bg: UnboundedReceiver<GuiChangeEvent>) -> Self {
-        let mut servers = vec![
+impl GuiState {
+    fn new() -> Self {
+        let servers = vec![
             ServerPanel {
                 state: ServerState::Disconnected,
                 server: "myserver.craftip.net".to_string(),
@@ -96,14 +91,9 @@ impl MyApp {
             },
         ];
         Self {
-            tx,
-            rx: rx_bg,
-            login_panel: LoginPanel::default(),
-            edit_panel: EditPanel::default(),
-            error: None,
             loading: false,
-            servers,
-            frames_rendered: 0,
+            error: None,
+            servers: servers.clone(),
         }
     }
     // set_active_server pass in closure the function that will be called on the active server
@@ -116,41 +106,30 @@ impl MyApp {
     }
 }
 
+struct MyApp {
+    login_panel: LoginPanel,
+    edit_panel: EditPanel,
+    state: Arc<Mutex<GuiState>>,
+    tx: GuiTriggeredChannel,
+    frames_rendered: usize,
+}
+
+impl MyApp {
+    fn new(tx: GuiTriggeredChannel, state: Arc<Mutex<GuiState>>) -> Self {
+        Self {
+            tx,
+            login_panel: LoginPanel::default(),
+            edit_panel: EditPanel::default(),
+            state,
+            frames_rendered: 0,
+        }
+    }
+}
+
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.frames_rendered += 1;
-        // update state from background thread
-        if let Ok(event) = self.rx.try_recv() {
-            match event {
-                GuiChangeEvent::Connected => {
-                    tracing::info!("Connected to server!");
-                    self.servers.iter_mut().for_each(|s| s.error = None);
-                    self.set_active_server(|s| {
-                        s.state = ServerState::Connected;
-                        s.connected = 0;
-                    });
-                }
-                GuiChangeEvent::Disconnected => {
-                    self.set_active_server(|s| {
-                        s.state = ServerState::Disconnected;
-                    });
-                }
-                GuiChangeEvent::Stats(stats) => {
-                    self.set_active_server(|s| {
-                        s.connected = stats;
-                    });
-                }
-                GuiChangeEvent::Error(err) => {
-                    self.set_active_server(|s| {
-                        s.error = Some(err);
-                    });
-                    //self.error = Some(err);
-                }
-                _ => {
-                    println!("Unhandled event: {:?}", event);
-                }
-            }
-        }
+        let mut state = self.state.lock().unwrap();
         // draw ui
         CentralPanel::default().show(ctx, |ui| {
             ui.set_enabled(!self.login_panel.open);
@@ -158,7 +137,7 @@ impl eframe::App for MyApp {
             self.edit_panel.update(ctx);
             egui::menu::bar(ui, |ui| {
                 ui.heading("CraftIP");
-                if self.loading {
+                if state.loading {
                     ui.spinner();
                 }
                 ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
@@ -168,11 +147,11 @@ impl eframe::App for MyApp {
             });
             ui.separator();
 
-            let already_connected = self
+            let already_connected = state
                 .servers
                 .iter()
                 .any(|s| s.state != ServerState::Disconnected);
-            for server in &mut self.servers {
+            for server in &mut state.servers {
                 let enabled = !already_connected || server.state != ServerState::Disconnected;
                 server.update(ui, &mut self.tx, enabled);
             }
@@ -180,10 +159,10 @@ impl eframe::App for MyApp {
             if ui.button("+").clicked() {
                 println!("add button clicked");
             }
-            if let Some(error) = &self.error {
+            if let Some(error) = &state.error {
                 ui.label(RichText::new(error).color(Color32::RED));
                 if ui.button("OK").clicked() {
-                    self.error = None;
+                    state.error = None;
                 }
             }
         });

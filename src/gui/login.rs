@@ -1,7 +1,8 @@
-use crate::gui;
-use crate::gui::gui_elements::popup;
 use eframe::egui;
 use eframe::egui::{Align, Color32, Layout, RichText};
+
+use crate::gui;
+use crate::gui::gui_elements::popup;
 
 pub struct LoginPanel {
     pub(crate) open: bool,
@@ -59,9 +60,4 @@ impl LoginPanel {
             });
         });
     }
-}
-
-pub struct ErrorPanel {
-    pub open: bool,
-    pub error: String,
 }

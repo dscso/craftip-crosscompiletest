@@ -1,7 +1,6 @@
 use tokio::sync::mpsc;
 
 pub type GuiTriggeredChannel = mpsc::UnboundedSender<GuiTriggeredEvent>;
-pub type GuiChangeChannel = mpsc::UnboundedSender<GuiChangeEvent>;
 
 #[derive(Debug, Clone)]
 pub enum GuiTriggeredEvent {
@@ -13,18 +12,6 @@ pub enum GuiTriggeredEvent {
     Send,
     Receive,
     Error,
-}
-
-#[derive(Debug, Clone)]
-pub enum GuiChangeEvent {
-    Login,
-    Logout,
-    Stats(u16),
-    Connected,
-    Disconnected,
-    Send,
-    Receive,
-    Error(String),
 }
 
 #[derive(Debug, Clone)]

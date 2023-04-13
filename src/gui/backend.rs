@@ -1,36 +1,32 @@
+use std::sync::{Arc, Mutex};
+
 use eframe::egui;
 use tokio::sync::mpsc;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::client::{Client, ControlTx, Stats};
-use crate::gui::gui_channel::{GuiChangeEvent, GuiTriggeredEvent};
+use crate::gui::gui_channel::GuiTriggeredEvent;
+use crate::gui::gui_channel::ServerState;
+use crate::GuiState;
 
 pub struct Controller {
     pub gui_rx: UnboundedReceiver<GuiTriggeredEvent>,
-    pub bck_tx: UnboundedSender<GuiChangeEvent>,
+    pub state: Arc<Mutex<GuiState>>,
     pub ctx: Option<egui::Context>,
 }
 
 impl Controller {
-    pub fn new(
-        gui_rx: UnboundedReceiver<GuiTriggeredEvent>,
-        bck_tx: UnboundedSender<GuiChangeEvent>,
-    ) -> Self {
+    pub fn new(gui_rx: UnboundedReceiver<GuiTriggeredEvent>, state: Arc<Mutex<GuiState>>) -> Self {
         Self {
             gui_rx,
-            bck_tx,
+            state,
             ctx: None,
         }
     }
     pub fn set_ctx(&mut self, ctx: egui::Context) {
         self.ctx = Some(ctx);
     }
-    pub fn send_to_gui(&mut self, event: GuiChangeEvent) {
-        self.bck_tx.send(event).unwrap();
-        if let Some(ctx) = &self.ctx {
-            ctx.request_repaint();
-        }
-    }
+
     pub async fn update(&mut self) {
         let mut control_tx: Option<ControlTx> = None;
 
@@ -46,10 +42,19 @@ impl Controller {
                     match result {
                         Stats::ClientsConnected(clients) => {
                             tracing::info!("Clients connected: {}", clients);
-                            self.send_to_gui(GuiChangeEvent::Stats(clients));
+                            self.state.lock().unwrap().set_active_server(|s| {
+                                s.connected = clients;
+                            });
                         }
                         Stats::Connected => {
-                            self.send_to_gui(GuiChangeEvent::Connected);
+                            tracing::info!("Connected to server!");
+                            // clean all errors
+                            self.state.lock().unwrap().servers.iter_mut().for_each(|s| s.error = None);
+                            // set active server to connected
+                            self.state.lock().unwrap().set_active_server(|s| {
+                                s.state = ServerState::Connected;
+                                s.connected = 0;
+                            });
                         }
                         _ => {
                             println!("Unhandled stats: {:?}", result);
@@ -79,16 +84,20 @@ impl Controller {
                             control_tx = Some(control_tx_new);
 
                             let server_shadow = server.clone();
-                            let tx = self.bck_tx.clone();
                             let ctx = self.ctx.clone();
                             let stats_tx_clone = stats_tx.clone();
+                            let state = self.state.clone();
                             tokio::spawn(async move {
                                 let mut client = Client::new(server_shadow.server.clone(), server_shadow.local.clone(), stats_tx_clone).await;
                                 if let Err(e) = client.connect(control_rx).await {
                                     tracing::error!("Error connecting to server: {:?}", e);
-                                    tx.send(GuiChangeEvent::Error(format!("Error connecting to server: {:?}", e))).unwrap();
+                                    state.lock().unwrap().set_active_server(|s| {
+                                        s.error = Some(format!("Error connecting to server: {:?}", e));
+                                    });
                                 }
-                                tx.send(GuiChangeEvent::Disconnected).unwrap();
+                                state.lock().unwrap().set_active_server(|s| {
+                                    s.state = ServerState::Disconnected;
+                                });
                                 if let Some(ctx) = ctx {
                                     ctx.request_repaint();
                                 }
