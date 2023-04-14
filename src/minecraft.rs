@@ -1,6 +1,7 @@
+use std::mem::size_of;
+
 use bytes::{Buf, BytesMut};
 use serde::{Deserialize, Serialize};
-use std::mem::size_of;
 
 use crate::cursor::{CustomCursor, CustomCursorMethods};
 use crate::datatypes::PacketError;
@@ -30,7 +31,7 @@ pub struct MinecraftDataPacket {
 impl From<ProxyDataPacket> for MinecraftDataPacket {
     fn from(packet: ProxyDataPacket) -> Self {
         MinecraftDataPacket {
-            length: packet.length,
+            length: packet.data.len(),
             data: packet.data,
         }
     }

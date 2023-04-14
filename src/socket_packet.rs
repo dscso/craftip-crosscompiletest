@@ -64,13 +64,6 @@ impl From<ProxyDataPacket> for SocketPacket {
 }
 
 impl SocketPacket {
-    pub fn new(buf: &mut BytesMut, first_pkg: bool) -> Result<SocketPacket, PacketError> {
-        if first_pkg {
-            MinecraftHelloPacket::new(buf).map(SocketPacket::MCHello)
-        } else {
-            MinecraftDataPacket::new(buf).map(SocketPacket::MCData)
-        }
-    }
     pub fn encode(&self) -> Result<Vec<u8>, PacketError> {
         let mut cursor = CustomCursor::new(vec![]);
         let packet = bincode::serialize(self).map_err(|_| PacketError::EncodingError)?;

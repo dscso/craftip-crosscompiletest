@@ -5,7 +5,7 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
-use crate::addressing::Distributor;
+use crate::addressing::{Distributor, DistributorError};
 
 mod addressing;
 mod client_handler;
@@ -14,6 +14,7 @@ mod datatypes;
 mod minecraft;
 mod packet_codec;
 mod proxy;
+mod proxy_handler;
 mod socket_packet;
 mod test;
 mod util;
@@ -37,14 +38,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mc_listener = TcpListener::bind(&addr).await?;
     tracing::info!("server running on {:?}", mc_listener.local_addr()?);
 
-    let distributor = Arc::new(Mutex::new(Distributor::new()));
+    let distributor = Arc::new(Mutex::new(Distributor::default()));
     loop {
         let (socket, _addr) = mc_listener.accept().await?;
         let distributor = Arc::clone(&distributor);
         tokio::spawn(async move {
-            client_handler::process_socket_connection(socket, distributor)
-                .await
-                .expect("TODO: panic message");
+            match client_handler::process_socket_connection(socket, distributor).await {
+                Ok(_) => tracing::info!("client disconnected"),
+                Err(DistributorError::UnknownError(err)) => {
+                    tracing::error!("client error: {}", err)
+                }
+                Err(e) => {
+                    tracing::info!("client error: {}", e);
+                }
+            }
         });
     }
 }

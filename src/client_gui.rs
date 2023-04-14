@@ -13,7 +13,6 @@ use crate::gui::login::LoginPanel;
 
 mod addressing;
 mod client;
-mod client_handler;
 mod cursor;
 mod datatypes;
 mod gui;

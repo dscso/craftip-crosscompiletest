@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::fmt;
 use std::net::SocketAddr;
 
-use futures::TryStreamExt;
 use thiserror::Error;
 use tokio::sync::mpsc;
 
@@ -23,8 +22,6 @@ macro_rules! distributor_error {
     })
 }
 
-
-
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum DistributorError {
     #[error("ClientNotFound")]
@@ -33,8 +30,6 @@ pub enum DistributorError {
     ServerNotFound,
     #[error("ServerAlreadyConnected")]
     ServerAlreadyConnected,
-    #[error("ClientNotConnected")]
-    ClientNotConnected,
     #[error("ServerNotConnected")]
     ServerNotConnected,
     #[error("TooManyClients")]
@@ -52,18 +47,21 @@ pub struct Distributor {
     pub server_clients: HashMap<ServerHostname, Vec<Option<SocketAddr>>>,
 }
 
-impl Distributor {
-    pub fn new() -> Self {
-        Distributor {
+impl Default for Distributor {
+    fn default() -> Self {
+        Self {
             clients: HashMap::new(),
             servers: HashMap::new(),
             server_clients: HashMap::new(),
         }
     }
+}
+
+impl Distributor {
     /// adds the client to the distributor and returns the client id
     pub fn add_client(
         &mut self,
-        addr: SocketAddr,
+        addr: &SocketAddr,
         hostname: &str,
         tx: Tx,
     ) -> Result<u16, DistributorError> {
@@ -74,9 +72,9 @@ impl Distributor {
 
         for (id, client) in server_clients.iter_mut().enumerate() {
             if client.is_none() {
-                *client = Some(addr);
+                *client = Some(*addr);
                 // if everything worked, add client and return OK
-                self.clients.insert(addr, (tx, hostname.to_string()));
+                self.clients.insert(*addr, (tx, hostname.to_string()));
                 return Ok(id as u16);
             }
         }
@@ -124,16 +122,21 @@ impl Distributor {
         for client in server_clients {
             if client.is_some() {
                 // get client ref
-                let client = client.as_ref()
+                let client = client
+                    .as_ref()
                     .ok_or(DistributorError::ClientNotFound)
-                    .map_err(distributor_error!("client in server_clients but not in clients!"))?;
+                    .map_err(distributor_error!(
+                        "client in server_clients but not in clients!"
+                    ))?;
                 // remove client from clients
-                let client = self
-                    .clients
-                    .remove(client);
+                let client = self.clients.remove(client);
                 // get tx
-                let client = client.ok_or(DistributorError::ClientNotFound)
-                    .map_err(distributor_error!("client in server_clients but not in clients!"))?;
+                let client =
+                    client
+                        .ok_or(DistributorError::ClientNotFound)
+                        .map_err(distributor_error!(
+                            "client in server_clients but not in clients!"
+                        ))?;
 
                 let tx = client.0;
                 tx.send(ChannelMessage::Close)
@@ -169,7 +172,8 @@ impl Distributor {
     ) -> Result<(), DistributorError> {
         let client = self.get_client(hostname, client_id)?;
         tracing::debug!("MC -> Client");
-        client.send(ChannelMessage::Packet(packet.clone()))
+        client
+            .send(ChannelMessage::Packet(packet.clone()))
             .map_err(distributor_error!("Error in distributor send_to_client"))?;
         Ok(())
     }
@@ -226,7 +230,6 @@ impl fmt::Display for Distributor {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr};
@@ -236,7 +239,7 @@ mod tests {
 
     #[test]
     fn test_add_client() {
-        let mut distributor = Distributor::new();
+        let mut distributor = Distributor::default();
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1234);
         let tx = mpsc::unbounded_channel().0;
 
@@ -266,7 +269,7 @@ mod tests {
 
     #[test]
     fn test_add_server() {
-        let mut distributor = Distributor::new();
+        let mut distributor = Distributor::default();
         let tx = mpsc::unbounded_channel().0;
         // add server
         distributor.add_server("localhost", tx.clone()).unwrap();
@@ -284,7 +287,7 @@ mod tests {
 
     #[test]
     fn test_remove_client() {
-        let mut distributor = Distributor::new();
+        let mut distributor = Distributor::default();
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1234);
         let tx = mpsc::unbounded_channel().0;
 
@@ -305,7 +308,7 @@ mod tests {
         }
 
         for i in 0..=99 {
-            let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1234 + i);
+            //let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1234 + i);
             let result = distributor.get_client("localhost", i);
             assert!(result.is_ok());
         }
@@ -336,8 +339,8 @@ mod tests {
 
     #[test]
     fn test_remove_server() {
-        let mut distributor = Distributor::new();
-        let (tx, rx) = mpsc::unbounded_channel();
+        let mut distributor = Distributor::default();
+        let (tx, _rx) = mpsc::unbounded_channel();
         let (tx_cli, mut rx_cli) = mpsc::unbounded_channel();
 
         // add server

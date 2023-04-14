@@ -1,23 +1,21 @@
-use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
 use serde::{Deserialize, Serialize};
+
+use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
 
 /// ProxyHelloPacket is the first packet sent by the client to the proxy.
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct ProxyHelloPacket {
-    pub length: usize,
     pub version: i32,
     pub hostname: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct ProxyClientJoinPacket {
-    pub length: usize,
     pub client_id: u16,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct ProxyClientDisconnectPacket {
-    pub length: usize,
     pub client_id: u16,
 }
 
@@ -36,6 +34,13 @@ impl ProxyDataPacket {
             data: packet.data,
         }
     }
+    pub fn new(data: Vec<u8>, length: usize, client_id: u16) -> Self {
+        Self {
+            length,
+            client_id,
+            data,
+        }
+    }
 }
 
 impl ProxyDataPacket {
@@ -44,16 +49,6 @@ impl ProxyDataPacket {
             length: packet.length,
             client_id,
             data: packet.data.clone(),
-        }
-    }
-}
-
-impl From<MinecraftHelloPacket> for ProxyDataPacket {
-    fn from(packet: MinecraftHelloPacket) -> Self {
-        ProxyDataPacket {
-            length: packet.length,
-            client_id: 0,
-            data: packet.data,
         }
     }
 }
@@ -72,7 +67,6 @@ impl From<MinecraftDataPacket> for ProxyDataPacket {
 impl ProxyClientJoinPacket {
     pub fn new(client_id: u16) -> Self {
         ProxyClientJoinPacket {
-            length: 0,
             client_id,
         }
     }
@@ -81,9 +75,6 @@ impl ProxyClientJoinPacket {
 /// ProxyClientDisconnectPacket constructor
 impl ProxyClientDisconnectPacket {
     pub fn new(client_id: u16) -> Self {
-        ProxyClientDisconnectPacket {
-            length: 0,
-            client_id,
-        }
+        ProxyClientDisconnectPacket { client_id }
     }
 }

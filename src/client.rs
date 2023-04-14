@@ -13,7 +13,7 @@ use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 
 use crate::packet_codec::PacketCodec;
-use crate::proxy;
+use crate::proxy::{ProxyClientDisconnectPacket, ProxyDataPacket, ProxyHelloPacket};
 use crate::socket_packet::{ChannelMessage, SocketPacket};
 
 #[derive(Debug)]
@@ -102,8 +102,7 @@ impl Client {
         let proxy_stream = TcpStream::connect(format!("{}:25565", &self.proxy_server)).await?;
         let mut proxy = Framed::new(proxy_stream, PacketCodec::new(1024 * 4));
 
-        let hello = SocketPacket::from(proxy::ProxyHelloPacket {
-            length: 0,
+        let hello = SocketPacket::from(ProxyHelloPacket {
             version: 123,
             hostname: self.proxy_server.clone(),
         });
@@ -250,11 +249,7 @@ impl Client {
                     }
                     tracing::debug!("recv pkg from mc srv len: {}", n);
                     // encapsulate in ProxyDataPacket
-                    let packet = SocketPacket::from(proxy::ProxyDataPacket {
-                        data: buf[0..n].to_vec(),
-                        client_id,
-                        length: n,
-                    });
+                    let packet = SocketPacket::from(ProxyDataPacket::new(buf[0..n].to_vec(), n, client_id));
 
                     tx.send(ChannelMessage::Packet(packet))?;
                 }
@@ -262,10 +257,7 @@ impl Client {
         }
         tracing::trace!("closing client connection");
 
-        let packet = SocketPacket::from(proxy::ProxyClientDisconnectPacket {
-            length: 0,
-            client_id,
-        });
+        let packet = SocketPacket::from(ProxyClientDisconnectPacket::new(client_id));
         if let Err(err) = tx.send(ChannelMessage::Packet(packet)) {
             tracing::error!("tx.send failed: {}", err);
             return Err(err.into());
