@@ -27,11 +27,11 @@ pub enum DistributorError {
     #[error("ClientNotFound")]
     ClientNotFound,
     #[error("Server Not found")]
-    ServerNotFound,
+    ServerNotFound(String),
     #[error("ServerAlreadyConnected")]
     ServerAlreadyConnected,
     #[error("ServerNotConnected")]
-    ServerNotConnected,
+    ServerNotConnected(String),
     #[error("TooManyClients")]
     TooManyClients,
     #[error("UnknownError")]
@@ -68,7 +68,7 @@ impl Distributor {
         let server_clients = self
             .server_clients
             .get_mut(hostname)
-            .ok_or(DistributorError::ServerNotFound)?;
+            .ok_or(DistributorError::ServerNotConnected(hostname.to_string()))?;
 
         for (id, client) in server_clients.iter_mut().enumerate() {
             if client.is_none() {
@@ -118,7 +118,7 @@ impl Distributor {
         let server_clients = self
             .server_clients
             .get_mut(hostname)
-            .ok_or(DistributorError::ServerNotFound)?;
+            .ok_or(DistributorError::ServerNotFound(hostname.to_string()))?;
         for client in server_clients {
             if client.is_some() {
                 // get client ref
@@ -161,7 +161,7 @@ impl Distributor {
                 return Ok(());
             }
         }
-        Err(DistributorError::ServerNotFound)
+        Err(DistributorError::ServerNotFound(server.to_string()))
     }
 
     pub fn send_to_client(
@@ -199,7 +199,7 @@ impl Distributor {
                 }
                 Err(DistributorError::ClientNotFound)
             }
-            None => Err(DistributorError::ServerNotFound),
+            None => Err(DistributorError::ServerNotFound(hostname.to_string())),
         }
     }
 }
@@ -248,21 +248,21 @@ mod tests {
 
         // add client
         let client_id = distributor
-            .add_client(addr, "localhost", tx.clone())
+            .add_client(&addr, "localhost", tx.clone())
             .unwrap();
         assert_eq!(client_id, 0);
 
         // add another client
         let addr2 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1235);
         let client_id = distributor
-            .add_client(addr2, "localhost", tx.clone())
+            .add_client(&addr2, "localhost", tx.clone())
             .unwrap();
         assert_eq!(client_id, 1);
 
         // too many clients
         for i in 2..=99 {
             let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1234 + i);
-            let result = distributor.add_client(addr, "localhost", tx.clone());
+            let result = distributor.add_client(&addr, "localhost", tx.clone());
             assert_eq!(result, Ok(i));
         }
     }
@@ -296,14 +296,14 @@ mod tests {
 
         // add client
         let result = distributor
-            .add_client(addr, "localhost", tx.clone())
+            .add_client(&addr, "localhost", tx.clone())
             .unwrap();
         assert_eq!(result, 0);
 
         // too many clients
         for i in 1..=99 {
             let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1234 + i);
-            let result = distributor.add_client(addr, "localhost", tx.clone());
+            let result = distributor.add_client(&addr, "localhost", tx.clone());
             assert_eq!(result, Ok(i));
         }
 
@@ -315,7 +315,7 @@ mod tests {
 
         let addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 9999);
         let tx = mpsc::unbounded_channel().0;
-        let result = distributor.add_client(addr1, "localhost", tx);
+        let result = distributor.add_client(&addr1, "localhost", tx);
         assert_eq!(result, Err(DistributorError::TooManyClients));
 
         // remove client
@@ -326,7 +326,7 @@ mod tests {
 
         let addr2 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1000);
         let tx = mpsc::unbounded_channel().0;
-        let result = distributor.add_client(addr2, "localhost", tx);
+        let result = distributor.add_client(&addr2, "localhost", tx);
         assert_eq!(result, Ok(0));
 
         assert!(!distributor.clients.is_empty());
@@ -349,12 +349,12 @@ mod tests {
         // add clients
         for i in 0..=99 {
             let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1234 + i);
-            let result = distributor.add_client(addr, "localhost", tx_cli.clone());
+            let result = distributor.add_client(&addr, "localhost", tx_cli.clone());
             assert_eq!(result, Ok(i));
         }
         for i in 0..=99 {
             let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 2000 + i);
-            let result = distributor.add_client(addr, "localhost2", tx_cli.clone());
+            let result = distributor.add_client(&addr, "localhost2", tx_cli.clone());
             assert_eq!(result, Ok(i));
         }
         // remove server
@@ -387,6 +387,6 @@ mod tests {
 
         // remove non-existent server
         let result = distributor.remove_server("localhost");
-        assert_eq!(result, Err(DistributorError::ServerNotFound));
+        assert_eq!(result, Err(DistributorError::ServerNotFound("localhost".to_string())));
     }
 }

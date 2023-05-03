@@ -49,7 +49,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     tracing::error!("client error: {}", err)
                 }
                 Err(e) => {
-                    tracing::info!("client error: {}", e);
+                    tracing::info!("client error: {:?}", e);
                 }
             }
         });

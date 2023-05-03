@@ -1,8 +1,9 @@
 #[cfg(test)]
 mod tests {
+    use bytes::{BufMut, BytesMut};
+
     use crate::datatypes::get_varint;
     use crate::minecraft::MinecraftHelloPacket;
-    use bytes::{BufMut, BytesMut};
 
     struct TestHelloPacket {
         name: String,
@@ -18,7 +19,7 @@ mod tests {
     fn test_hello_packet_ping() {
         let test_vector = vec![
             TestHelloPacket {
-                name: "pring with long hostname".to_string(),
+                name: "ping with long hostname".to_string(),
                 packet: MinecraftHelloPacket {
                     length: 162,
                     id: 0,
@@ -40,7 +41,7 @@ mod tests {
                 },
             },
             TestHelloPacket {
-                name: "pring with short hostname".to_string(),
+                name: "ping with short hostname".to_string(),
                 packet: MinecraftHelloPacket {
                     length: 40,
                     id: 0,

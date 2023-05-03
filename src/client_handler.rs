@@ -28,7 +28,7 @@ impl MCClient {
     /// Create a new instance of `Peer`.
     async fn new(
         distributor: Arc<Mutex<Distributor>>,
-        mut frames: Framed<TcpStream, PacketCodec>,
+        frames: Framed<TcpStream, PacketCodec>,
         hello_packet: MinecraftHelloPacket,
     ) -> Result<Self, DistributorError> {
         // Get the client socket address
