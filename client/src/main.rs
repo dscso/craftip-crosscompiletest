@@ -11,15 +11,8 @@ use crate::gui::gui_channel::{GuiTriggeredChannel, GuiTriggeredEvent, Server, Se
 use crate::gui::gui_elements::popup;
 use crate::gui::login::LoginPanel;
 
-mod addressing;
 mod client;
-mod cursor;
-mod datatypes;
 mod gui;
-mod minecraft;
-mod packet_codec;
-mod proxy;
-mod socket_packet;
 
 #[tokio::main]
 pub async fn main() -> Result<(), eframe::Error> {

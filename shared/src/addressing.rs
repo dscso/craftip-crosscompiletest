@@ -16,7 +16,6 @@ pub type Rx = mpsc::UnboundedReceiver<ChannelMessage<SocketPacket>>;
 macro_rules! distributor_error {
     ($($arg:tt)*) => ({
         |e| {
-            use crate::addressing::DistributorError;
             DistributorError::UnknownError(format!("{}:{} {}: {e}", file!(), line!(), format_args!($($arg)*)))
         }
     })

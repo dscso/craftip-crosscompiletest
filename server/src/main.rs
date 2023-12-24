@@ -5,19 +5,9 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
-use crate::addressing::{Distributor, DistributorError};
+use shared::addressing::{Distributor, DistributorError};
 
-mod addressing;
 mod client_handler;
-mod cursor;
-mod datatypes;
-mod minecraft;
-mod packet_codec;
-mod proxy;
-mod proxy_handler;
-mod socket_packet;
-mod test;
-mod util;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {

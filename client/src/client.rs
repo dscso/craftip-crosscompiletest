@@ -12,9 +12,9 @@ use tokio::time::timeout;
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 
-use crate::packet_codec::PacketCodec;
-use crate::proxy::{ProxyClientDisconnectPacket, ProxyDataPacket, ProxyHelloPacket};
-use crate::socket_packet::{ChannelMessage, SocketPacket};
+use shared::packet_codec::PacketCodec;
+use shared::proxy::{ProxyClientDisconnectPacket, ProxyDataPacket, ProxyHelloPacket};
+use shared::socket_packet::{ChannelMessage, SocketPacket};
 
 #[derive(Debug)]
 pub enum Stats {

@@ -6,13 +6,13 @@ use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex};
 use tokio_util::codec::Framed;
 
-use crate::addressing::{Distributor, DistributorError, Rx};
-use crate::distributor_error;
-use crate::minecraft::MinecraftHelloPacket;
-use crate::packet_codec::PacketCodec;
-use crate::proxy::{ProxyClientDisconnectPacket, ProxyClientJoinPacket, ProxyDataPacket};
-use crate::proxy_handler::ProxyClient;
-use crate::socket_packet::{ChannelMessage, SocketPacket};
+use shared::addressing::{Distributor, DistributorError, Rx};
+use shared::distributor_error;
+use shared::minecraft::MinecraftHelloPacket;
+use shared::packet_codec::PacketCodec;
+use shared::proxy::{ProxyClientDisconnectPacket, ProxyClientJoinPacket, ProxyDataPacket};
+use shared::proxy_handler::ProxyClient;
+use shared::socket_packet::{ChannelMessage, SocketPacket};
 
 #[derive(Debug)]
 pub struct MCClient {

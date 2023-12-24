@@ -25,7 +25,7 @@ pub struct ProxyClient {
 }
 
 impl ProxyClient {
-    pub(crate) async fn new(
+    pub async fn new(
         distributor: Arc<Mutex<Distributor>>,
         frames: Framed<TcpStream, PacketCodec>,
         packet: ProxyHelloPacket,
