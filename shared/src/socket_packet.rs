@@ -88,7 +88,7 @@ impl SocketPacket {
             &cursor.get_ref()
                 [cursor.position() as usize..cursor.position() as usize + length as usize],
         )
-            .map_err(|_| PacketError::NotValid)?;
+        .map_err(|_| PacketError::NotValid)?;
         buf.advance(cursor.position() as usize + length as usize);
         // decode bincode packet
         Ok(result)

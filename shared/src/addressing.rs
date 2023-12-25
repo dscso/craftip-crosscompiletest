@@ -39,21 +39,11 @@ pub enum DistributorError {
 
 type ServerHostname = String;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Distributor {
     pub clients: HashMap<SocketAddr, (Tx, ServerHostname)>,
     pub servers: HashMap<ServerHostname, Tx>,
     pub server_clients: HashMap<ServerHostname, Vec<Option<SocketAddr>>>,
-}
-
-impl Default for Distributor {
-    fn default() -> Self {
-        Self {
-            clients: HashMap::new(),
-            servers: HashMap::new(),
-            server_clients: HashMap::new(),
-        }
-    }
 }
 
 impl Distributor {
@@ -231,8 +221,8 @@ impl fmt::Display for Distributor {
 
 #[cfg(test)]
 mod tests {
-    use std::net::{IpAddr, Ipv4Addr};
     use std::net::SocketAddr;
+    use std::net::{IpAddr, Ipv4Addr};
 
     use super::*;
 
@@ -386,6 +376,9 @@ mod tests {
 
         // remove non-existent server
         let result = distributor.remove_server("localhost");
-        assert_eq!(result, Err(DistributorError::ServerNotFound("localhost".to_string())));
+        assert_eq!(
+            result,
+            Err(DistributorError::ServerNotFound("localhost".to_string()))
+        );
     }
 }

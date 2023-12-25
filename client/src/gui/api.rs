@@ -5,13 +5,19 @@ struct ControllerAPI {
 
 impl ControllerAPI {
     pub fn new() -> Self {
-        Self { client: reqwest::Client::new(), user: None }
+        Self {
+            client: reqwest::Client::new(),
+            user: None,
+        }
     }
     /// Authenticate user by calling REST API
     /// Returns true if user is authenticated
     pub async fn login(&mut self, username: &str, password: &str) -> bool {
         let client = reqwest::Client::new();
-        let url = format!("http://localhost:8080/authenticate?username={}&password={}", username, password);
+        let url = format!(
+            "http://localhost:8080/authenticate?username={}&password={}",
+            username, password
+        );
         let response = client.get(&url).send().await;
         if response.is_err() {
             return false;

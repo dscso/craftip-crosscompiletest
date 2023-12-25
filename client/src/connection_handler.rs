@@ -1,39 +1,40 @@
-use std::sync::Arc;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
-use shared::addressing::Tx;
-use shared::socket_packet::{ChannelMessage, SocketPacket};
-use anyhow::{Result, Context};
-use tokio::net::TcpStream;
+use anyhow::{Context, Result};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::Mutex;
-use shared::proxy::{ProxyClientDisconnectPacket, ProxyDataPacket};
+use tokio::net::TcpStream;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 
-use crate::client::Shared;
+use shared::addressing::Tx;
+use shared::proxy::{ProxyClientDisconnectPacket, ProxyDataPacket};
+use shared::socket_packet::{ChannelMessage, SocketPacket};
+
+use crate::client::ClientTx;
 
 pub struct ClientConnection {
     mc_server: String,
     client_id: u16,
     client_rx: UnboundedReceiver<ChannelMessage<Vec<u8>>>,
     proxy_tx: Tx,
-    state: Arc<Mutex<Shared>>,
 }
+
 impl ClientConnection {
-    pub async fn new(state: Arc<Mutex<Shared>>, proxy_tx: Tx, mc_server: String, client_id: u16) -> Self {
+    pub async fn new(proxy_tx: Tx, mc_server: String, client_id: u16) -> (Self, ClientTx) {
         let (client_tx, client_rx) = unbounded_channel();
-        state.lock().await.add_connection(client_id, client_tx);
-        Self {
-            mc_server,
-            client_id,
-            client_rx,
-            proxy_tx,
-            state,
-        }
+        (
+            Self {
+                mc_server,
+                client_id,
+                client_rx,
+                proxy_tx,
+            },
+            client_tx,
+        )
     }
     pub async fn handle_client(&mut self) -> Result<()> {
         tracing::info!("opening new client with id {}", self.client_id);
         // connect to server
         let mut buf = [0; 1024];
-        let mut mc_server = TcpStream::connect(&self.mc_server).await
+        let mut mc_server = TcpStream::connect(&self.mc_server)
+            .await
             .context(format!("could not connect to {}", &self.mc_server))?;
         loop {
             tokio::select! {
@@ -78,10 +79,16 @@ impl ClientConnection {
 
         Ok(())
     }
+    /// Sends a disconnect packet to the proxy server
     pub async fn close(&self) {
         let disconnect_pkg = SocketPacket::from(ProxyClientDisconnectPacket::new(self.client_id));
         // if this fails, channel is already closed. Therefore not important
         let _ = self.proxy_tx.send(ChannelMessage::Packet(disconnect_pkg));
-        self.state.lock().await.remove_connection(self.client_id);
+    }
+}
+
+impl Drop for ClientConnection {
+    fn drop(&mut self) {
+        tracing::info!("dropping client connection {}", self.client_id);
     }
 }

@@ -2,9 +2,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use eframe::{egui, Theme};
 use eframe::egui::{CentralPanel, Color32, Layout, RichText, Ui};
 use eframe::emath::Align;
+use eframe::{egui, Theme};
 use tokio::sync::mpsc;
 
 use crate::gui::gui_channel::{GuiTriggeredChannel, GuiTriggeredEvent, Server, ServerState};
@@ -12,8 +12,8 @@ use crate::gui::gui_elements::popup;
 use crate::gui::login::LoginPanel;
 
 mod client;
-mod gui;
 mod connection_handler;
+mod gui;
 
 #[tokio::main]
 pub async fn main() -> Result<(), eframe::Error> {
@@ -320,7 +320,7 @@ impl ServerPanel {
                                 server: self.server.clone(),
                                 local: self.local.clone(),
                             }))
-                                .expect("failed to send disconnect event");
+                            .expect("failed to send disconnect event");
                         }
                         ServerState::Disconnected => {
                             self.state = ServerState::Connecting;
@@ -328,7 +328,7 @@ impl ServerPanel {
                                 server: self.server.clone(),
                                 local: self.local.clone(),
                             }))
-                                .expect("failed to send disconnect event");
+                            .expect("failed to send disconnect event");
                         }
                         _ => unreachable!("invalid state"),
                     }

@@ -1,25 +1,22 @@
 use std::collections::HashMap;
 use std::error::Error;
-use std::sync::Arc;
 use std::time::Duration;
-
-use futures::SinkExt;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
-use tokio::sync::{mpsc, oneshot};
-use tokio::sync::Mutex;
-use tokio::time::sleep;
-use tokio_stream::StreamExt;
-use tokio_util::codec::Framed;
 use std::time::SystemTime;
 
 use anyhow::{Context, Result};
+use futures::{SinkExt, TryFutureExt};
+use tokio::net::TcpStream;
+use tokio::sync::mpsc;
+use tokio::time::sleep;
+use tokio_stream::StreamExt;
+use tokio_util::codec::Framed;
 
 use shared::packet_codec::PacketCodec;
 use shared::proxy::ProxyHelloPacket;
 use shared::socket_packet::{ChannelMessage, SocketPacket};
 
 use crate::connection_handler::ClientConnection;
+
 #[derive(Debug)]
 pub enum Stats {
     Connected,
@@ -35,17 +32,19 @@ pub enum Control {
 pub type Tx = mpsc::UnboundedSender<ChannelMessage<SocketPacket>>;
 pub type Rx = mpsc::UnboundedReceiver<ChannelMessage<SocketPacket>>;
 
+pub type ClientTx = mpsc::UnboundedSender<ChannelMessage<Vec<u8>>>;
+pub type ClientRx = mpsc::UnboundedReceiver<ChannelMessage<Vec<u8>>>;
+
 pub type ControlTx = mpsc::UnboundedSender<Control>;
 pub type ControlRx = mpsc::UnboundedReceiver<Control>;
 
 pub type StatsTx = mpsc::UnboundedSender<Stats>;
 pub type StatsRx = mpsc::UnboundedReceiver<Stats>;
 
-#[derive(Clone)]
 pub struct Client {
     proxy_server: String,
     mc_server: String,
-    state: Arc<Mutex<Shared>>,
+    state: Shared,
     stats_tx: StatsTx,
 }
 
@@ -79,18 +78,22 @@ impl Shared {
                 .unwrap();
         }
     }
-    pub fn get_connection(
-        &mut self,
-        id: u16,
-    ) -> Option<&mut mpsc::UnboundedSender<ChannelMessage<Vec<u8>>>> {
-        self.connections.get_mut(&id)
+    pub fn send_to(&mut self, id: u16, msg: ChannelMessage<Vec<u8>>) -> Result<()> {
+        let channel = self
+            .connections
+            .get_mut(&id)
+            .context(format!("could not find client id {}, {:?}", id, msg))?;
+        channel.send(msg).unwrap_or_else(|e| {
+            self.connections.remove(&id);
+        });
+        Ok(())
     }
 }
 
 impl Client {
     pub async fn new(proxy_server: String, mc_server: String, stats_tx: StatsTx) -> Self {
-        let state = Arc::new(Mutex::new(Shared::new()));
-        state.lock().await.set_stats_tx(stats_tx.clone());
+        let mut state = Shared::new();
+        state.set_stats_tx(stats_tx.clone());
         Client {
             proxy_server,
             mc_server,
@@ -113,8 +116,9 @@ impl Client {
         proxy.send(hello).await?;
         self.stats_tx.send(Stats::Connected)?;
         tracing::info!("Connected to proxy server!");
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let (client_handler_death_tx, mut client_handler_death_rx) = mpsc::unbounded_channel::<String>();
+        let (to_proxy_tx, mut to_proxy_rx) = mpsc::unbounded_channel();
+        let (client_handler_death_tx, mut client_handler_death_rx) =
+            mpsc::unbounded_channel::<String>();
         loop {
             tokio::select! {
                 result = control_rx.recv() => {
@@ -134,7 +138,7 @@ impl Client {
                         }
                     }
                 }
-                Some(pkg) = rx.recv() => {
+                Some(pkg) = to_proxy_rx.recv() => {
                     //tracing::info!("Sending packet to client: {:?}", pkg);
                     match pkg {
                         ChannelMessage::Packet(pkg) => {
@@ -150,38 +154,26 @@ impl Client {
                         Some(Ok(msg)) => {
                             match msg {
                                 SocketPacket::ProxyJoin(packet) => {
-                                    let mut client_connection = ClientConnection::new(self.state.clone(), tx.clone(), self.mc_server.clone(), packet.client_id).await;
+                                    let (mut client_connection, client_tx) = ClientConnection::new(to_proxy_tx.clone(), self.mc_server.clone(), packet.client_id).await;
+                                    self.state.add_connection(packet.client_id, client_tx);
                                     let client_handler_death_tx = client_handler_death_tx.clone();
                                     tokio::spawn(async move {
                                         client_connection.handle_client().await.unwrap_or_else(|e| {
                                             tracing::error!("An Error occurred in the handle_client function: {}", e);
                                             // sometimes handle_client closes after gui, errors can occur
                                             let _res = client_handler_death_tx.send(e.to_string());
-                                        })
+                                        });
 
                                         client_connection.close().await;
                                     });
                                 }
                                 SocketPacket::ProxyData(packet) => {
-                                    match self.state.lock().await.get_connection(packet.client_id) {
-                                        Some(tx) => {
-                                            tx.send(ChannelMessage::Packet(packet.data.to_vec()))?;
-                                        }
-                                        None => {
-                                            tracing::error!("connection to minecraft server not found!");
-                                        }
-                                    }
+                                    self.state.send_to(packet.client_id, ChannelMessage::Packet(packet.data.to_vec()))?;
                                 }
                                 SocketPacket::ProxyDisconnect(packet) => {
-                                    match self.state.lock().await.connections.get(&packet.client_id) {
-                                        Some(tx) => {
-                                            tx.send(ChannelMessage::Close)?;
-                                        }
-                                        None => {
-                                            tracing::debug!("connection already closed!")
-                                        }
-
-                                    }
+                                    // this can fail if the client is already disconnected
+                                    let _ = self.state.send_to(packet.client_id, ChannelMessage::Close);
+                                    self.state.remove_connection(packet.client_id);
                                 }
                                 SocketPacket::ProxyPong(ping) => {
                                     let time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as u16;

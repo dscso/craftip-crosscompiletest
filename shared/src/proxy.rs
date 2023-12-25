@@ -66,9 +66,7 @@ impl From<MinecraftDataPacket> for ProxyDataPacket {
 /// ProxyClientJoinPacket constructor
 impl ProxyClientJoinPacket {
     pub fn new(client_id: u16) -> Self {
-        ProxyClientJoinPacket {
-            client_id,
-        }
+        ProxyClientJoinPacket { client_id }
     }
 }
 

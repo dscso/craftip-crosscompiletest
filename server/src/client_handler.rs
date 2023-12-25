@@ -6,12 +6,12 @@ use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex};
 use tokio_util::codec::Framed;
 
+use crate::proxy_handler::ProxyClient;
 use shared::addressing::{Distributor, DistributorError, Rx};
 use shared::distributor_error;
 use shared::minecraft::MinecraftHelloPacket;
 use shared::packet_codec::PacketCodec;
 use shared::proxy::{ProxyClientDisconnectPacket, ProxyClientJoinPacket, ProxyDataPacket};
-use crate::proxy_handler::ProxyClient;
 use shared::socket_packet::{ChannelMessage, SocketPacket};
 
 #[derive(Debug)]
@@ -49,12 +49,12 @@ impl MCClient {
         if let Err(err) = distributor
             .lock()
             .await
-            .send_to_server(&hostname, SocketPacket::from(client_join_packet)) {
+            .send_to_server(&hostname, SocketPacket::from(client_join_packet))
+        {
             // this should never happen
             distributor.lock().await.remove_client(&addr)?;
             return Err(err);
         }
-
 
         let mut packet = ProxyDataPacket::from_mc_hello_packet(&hello_packet, id);
         packet.client_id = id;
@@ -64,7 +64,6 @@ impl MCClient {
             distributor.lock().await.remove_client(&addr)?;
             return Err(err);
         }
-
 
         Ok(MCClient {
             frames,
