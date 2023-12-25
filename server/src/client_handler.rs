@@ -11,7 +11,7 @@ use shared::distributor_error;
 use shared::minecraft::MinecraftHelloPacket;
 use shared::packet_codec::PacketCodec;
 use shared::proxy::{ProxyClientDisconnectPacket, ProxyClientJoinPacket, ProxyDataPacket};
-use shared::proxy_handler::ProxyClient;
+use crate::proxy_handler::ProxyClient;
 use shared::socket_packet::{ChannelMessage, SocketPacket};
 
 #[derive(Debug)]
@@ -79,9 +79,8 @@ impl MCClient {
     pub async fn handle(&mut self) -> Result<(), DistributorError> {
         loop {
             tokio::select! {
-                // A message was received from a peer. Send it to the current user.
-                result = self.rx.recv() => {
-                    match result {
+                res = self.rx.recv() => {
+                    match res {
                         Some(ChannelMessage::Packet(pkg)) => {
                             self.frames.send(pkg).await.map_err(distributor_error!("could not send packet"))?;
                         }

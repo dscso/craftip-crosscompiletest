@@ -13,6 +13,7 @@ use crate::gui::login::LoginPanel;
 
 mod client;
 mod gui;
+mod connection_handler;
 
 #[tokio::main]
 pub async fn main() -> Result<(), eframe::Error> {
@@ -82,6 +83,13 @@ impl GuiState {
                 local: "localhost:25565".to_string(),
                 error: None,
             },
+            ServerPanel {
+                state: ServerState::Disconnected,
+                server: "hi".to_string(),
+                connected: 0,
+                local: "localhost:25564".to_string(),
+                error: None,
+            },
         ];
         Self {
             loading: false,
@@ -96,7 +104,9 @@ impl GuiState {
             .iter_mut()
             .find(|s| s.state != ServerState::Disconnected)
             .map(closure)
-            .expect("No active server!");
+            .unwrap_or_else(|| {
+                tracing::warn!("No active server found!");
+            });
     }
     fn set_ctx(&mut self, ctx: egui::Context) {
         self.ctx = Some(ctx);

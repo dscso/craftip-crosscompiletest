@@ -8,6 +8,7 @@ use tokio::sync::Mutex;
 use shared::addressing::{Distributor, DistributorError};
 
 mod client_handler;
+pub mod proxy_handler;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {

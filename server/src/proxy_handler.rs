@@ -8,12 +8,12 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::time::timeout;
 use tokio_util::codec::Framed;
 
-use crate::addressing::{Distributor, DistributorError, Rx};
-use crate::distributor_error;
-use crate::minecraft::MinecraftDataPacket;
-use crate::packet_codec::PacketCodec;
-use crate::proxy::ProxyHelloPacket;
-use crate::socket_packet::{ChannelMessage, SocketPacket};
+use shared::addressing::{Distributor, DistributorError, Rx};
+use shared::distributor_error;
+use shared::minecraft::MinecraftDataPacket;
+use shared::packet_codec::PacketCodec;
+use shared::proxy::ProxyHelloPacket;
+use shared::socket_packet::{ChannelMessage, SocketPacket};
 
 #[derive(Debug)]
 pub struct ProxyClient {

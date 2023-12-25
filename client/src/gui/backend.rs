@@ -66,16 +66,16 @@ impl Controller {
                             let (control_tx_new, control_rx) = mpsc::unbounded_channel();
                             control_tx = Some(control_tx_new);
 
-                            let hostname = server.server.clone();
-                            let local = server.local.clone();
+                            let hostname = server.server;
+                            let local = server.local;
                             let stats_tx_clone = stats_tx.clone();
                             let state = self.state.clone();
                             tokio::spawn(async move {
                                 let mut client = Client::new(hostname, local, stats_tx_clone).await;
                                 if let Err(e) = client.connect(control_rx).await {
-                                    tracing::error!("Error connecting to server: {:?}", e);
+                                    tracing::error!("Connection Error: {:?}", e);
                                     state.lock().unwrap().set_active_server(|s| {
-                                        s.error = Some(format!("Error connecting to server: {:?}", e));
+                                        s.error = Some(format!("Error: {:?}", e));
                                     });
                                 }
                                 state.lock().unwrap().set_active_server(|s| {

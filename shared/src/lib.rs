@@ -7,4 +7,3 @@ mod test;
 mod datatypes;
 pub mod	proxy;
 mod	util;
-pub mod proxy_handler;
