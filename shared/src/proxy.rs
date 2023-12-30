@@ -10,6 +10,18 @@ pub struct ProxyHelloPacket {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+pub enum ProxyHandshakeResponse {
+    ConnectionSuccessful(),
+    Err(String)
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+pub struct ProxyHelloResponsePacket {
+    pub version: i32,
+    pub status: ProxyHandshakeResponse
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct ProxyClientJoinPacket {
     pub client_id: u16,
 }

@@ -12,7 +12,7 @@ use shared::addressing::{Distributor, DistributorError, Rx};
 use shared::distributor_error;
 use shared::minecraft::MinecraftDataPacket;
 use shared::packet_codec::PacketCodec;
-use shared::proxy::ProxyHelloPacket;
+use shared::proxy::{ProxyHandshakeResponse, ProxyHelloPacket, ProxyHelloResponsePacket};
 use shared::socket_packet::{ChannelMessage, SocketPacket};
 
 #[derive(Debug)]
@@ -27,7 +27,7 @@ pub struct ProxyClient {
 impl ProxyClient {
     pub async fn new(
         distributor: Arc<Mutex<Distributor>>,
-        frames: Framed<TcpStream, PacketCodec>,
+        mut frames: Framed<TcpStream, PacketCodec>,
         packet: ProxyHelloPacket,
     ) -> Result<Self, DistributorError> {
         let (tx, rx) = mpsc::unbounded_channel();
@@ -35,7 +35,15 @@ impl ProxyClient {
             .get_ref()
             .peer_addr()
             .map_err(distributor_error!("could not get peer addr"))?;
+        tokio::time::sleep(Duration::from_secs(2)).await;
         distributor.lock().await.add_server(&packet.hostname, tx)?;
+        // send response to hello packet
+        let response = ProxyHelloResponsePacket {
+            version: 123,
+            status: ProxyHandshakeResponse::ConnectionSuccessful(),
+        };
+        frames.send(SocketPacket::from(response)).await
+            .map_err(distributor_error!("could not send packet"))?;
 
         Ok(ProxyClient {
             frames,

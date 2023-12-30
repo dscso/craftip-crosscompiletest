@@ -7,7 +7,7 @@ pub enum GuiTriggeredEvent {
     Login,
     Logout,
     Connect(Server),
-    Disconnect(Server),
+    Disconnect(),
     Send,
 }
 

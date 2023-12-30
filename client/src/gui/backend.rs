@@ -1,5 +1,4 @@
 use std::sync::{Arc, Mutex};
-
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -47,8 +46,9 @@ impl Controller {
                                 s.connected = 0;
                             });
                         }
+                        Stats::Ping(_ping) => {}
                         _ => {
-                            println!("Unhandled stats: {:?}", result);
+                            tracing::error!("Unhandled stats: {:?}", result);
                         }
                     }
                 }
@@ -63,30 +63,32 @@ impl Controller {
                             // sleep async 1 sec
                             tracing::info!("Connecting to server: {:?}", server);
 
-                            let (control_tx_new, control_rx) = mpsc::unbounded_channel();
+                            let (control_tx_new, mut control_rx) = mpsc::unbounded_channel();
                             control_tx = Some(control_tx_new);
 
-                            let hostname = server.server;
-                            let local = server.local;
-                            let stats_tx_clone = stats_tx.clone();
                             let state = self.state.clone();
+                            let mut client = Client::new(server.server.clone(), server.local.clone(), stats_tx.clone(), control_rx).await;
                             tokio::spawn(async move {
-                                let mut client = Client::new(hostname, local, stats_tx_clone).await;
-                                if let Err(e) = client.connect(control_rx).await {
-                                    tracing::error!("Connection Error: {:?}", e);
+                                // connect
+                                let mut err = client.connect().await;
+                                if err.is_ok() {
                                     state.lock().unwrap().set_active_server(|s| {
-                                        s.error = Some(format!("Error: {:?}", e));
+                                        s.state = ServerState::Connected;
                                     });
+                                    // handle handle connection if connection was successful
+                                    err = client.handle().await;
                                 }
+
                                 state.lock().unwrap().set_active_server(|s| {
+                                    if let Err(e) = err {
+                                        s.error = Some(format!("Error connecting: {:?}", e));
+                                    }
                                     s.state = ServerState::Disconnected;
                                 });
-                                state.lock().unwrap().request_repaint();
                             });
                         }
-                        GuiTriggeredEvent::Disconnect(server) => {
+                        GuiTriggeredEvent::Disconnect() => {
                             // sleep async 1 sec
-                            tracing::info!("Disconnecting from server: {:?}", server);
                             if let Some(control_tx) = &control_tx {
                                 control_tx.send(crate::client::Control::Disconnect).unwrap();
                             }
@@ -97,8 +99,6 @@ impl Controller {
                     }
                 }
             }
-            // after each event received, repaint!
-            self.state.lock().unwrap().request_repaint();
         }
     }
 }

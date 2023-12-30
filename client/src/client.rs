@@ -1,10 +1,9 @@
 use std::collections::HashMap;
-use std::error::Error;
 use std::time::Duration;
 use std::time::SystemTime;
 
-use anyhow::{Context, Result};
-use futures::{SinkExt, TryFutureExt};
+use anyhow::{bail, Context, Result};
+use futures::{SinkExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
@@ -12,7 +11,7 @@ use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 
 use shared::packet_codec::PacketCodec;
-use shared::proxy::ProxyHelloPacket;
+use shared::proxy::{ProxyHandshakeResponse, ProxyHelloPacket};
 use shared::socket_packet::{ChannelMessage, SocketPacket};
 
 use crate::connection_handler::ClientConnection;
@@ -21,6 +20,7 @@ use crate::connection_handler::ClientConnection;
 pub enum Stats {
     Connected,
     ClientsConnected(u16),
+    Ping(u16),
     Disconnected,
 }
 
@@ -46,6 +46,8 @@ pub struct Client {
     mc_server: String,
     state: Shared,
     stats_tx: StatsTx,
+    proxy: Option<Framed<TcpStream, PacketCodec>>,
+    pub control_rx: ControlRx,
 }
 
 pub struct Shared {
@@ -91,7 +93,7 @@ impl Shared {
 }
 
 impl Client {
-    pub async fn new(proxy_server: String, mc_server: String, stats_tx: StatsTx) -> Self {
+    pub async fn new(proxy_server: String, mc_server: String, stats_tx: StatsTx, mut control_rx: ControlRx) -> Self {
         let mut state = Shared::new();
         state.set_stats_tx(stats_tx.clone());
         Client {
@@ -99,12 +101,14 @@ impl Client {
             mc_server,
             stats_tx,
             state,
+            control_rx,
+            proxy: None
         }
     }
 }
 
 impl Client {
-    pub async fn connect(&mut self, mut control_rx: ControlRx) -> Result<(), Box<dyn Error>> {
+    pub async fn connect(&mut self) -> Result<()> {
         // todo good formatting
         let proxy_stream = TcpStream::connect(format!("{}:25565", &self.proxy_server)).await?;
         let mut proxy = Framed::new(proxy_stream, PacketCodec::new(1024 * 4));
@@ -114,30 +118,54 @@ impl Client {
             hostname: self.proxy_server.clone(),
         });
         proxy.send(hello).await?;
-        self.stats_tx.send(Stats::Connected)?;
+        tokio::select! {
+            res = proxy.next() => match res {
+                Some(Ok(SocketPacket::ProxyHelloResponse(hello_response))) => {
+                    if let ProxyHandshakeResponse::Err(e) = hello_response.status {
+                        bail!("Connection failed: {:?}", e);
+                    }
+                }
+                None => bail!("Server closed connection"),
+                e => bail!("Server did not respond as respected: {:?}", e)
+            },
+            res = self.control_rx.recv() => match res {
+                Some(Control::Disconnect) | None => {
+                    self.stats_tx.send(Stats::Connected)?;
+                    bail!("Connection canceled by user");
+                }
+            }
+        }
         tracing::info!("Connected to proxy server!");
+        self.proxy = Some(proxy);
+        Ok(())
+    }
+    pub async fn handle(&mut self) -> Result<()> {
         let (to_proxy_tx, mut to_proxy_rx) = mpsc::unbounded_channel();
         let (client_handler_death_tx, mut client_handler_death_rx) =
             mpsc::unbounded_channel::<String>();
+        let mut proxy = self.proxy.as_mut().unwrap();
         loop {
             tokio::select! {
-                result = control_rx.recv() => {
+                // process control messages e.g. form gui
+                result = self.control_rx.recv() => {
                     match result {
                         Some(Control::Disconnect) | None => {
                             return Ok(());
                         }
                     }
                 }
+                // if any client handler dies, return error
                 result = client_handler_death_rx.recv() => {
                     match result {
                         Some(e) => {
-                            return Err(e.into());
+                            bail!(e);
                         }
                         None => {
-                            return Err("client handler died".into());
+                            bail!("client handler died");
                         }
                     }
                 }
+                // send packets to proxy
                 Some(pkg) = to_proxy_rx.recv() => {
                     //tracing::info!("Sending packet to client: {:?}", pkg);
                     match pkg {
@@ -145,10 +173,11 @@ impl Client {
                             proxy.send(pkg).await?;
                         }
                         ChannelMessage::Close => {
-                            return Err("all clients dropped".into());
+                            bail!("all clients dropped");
                         }
                     }
                 }
+                // receive proxy packets
                 result = proxy.next() => {
                     match result {
                         Some(Ok(msg)) => {
@@ -177,7 +206,8 @@ impl Client {
                                 }
                                 SocketPacket::ProxyPong(ping) => {
                                     let time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as u16;
-                                    tracing::info!("pong {} ms", time.saturating_sub(ping));
+                                    let ping = time.saturating_sub(ping);
+                                    self.stats_tx.send(Stats::Ping(ping))?;
                                 }
                                 _ => {
                                     unimplemented!("Message not implemented!")
@@ -195,7 +225,7 @@ impl Client {
                         // The stream has been exhausted.
                         None => {
                             tracing::info!("Proxy has closed the connection");
-                            return Err("Proxy has closed the connection".into());
+                            bail!("Proxy has closed the connection");
                         },
                     }
                 },
@@ -207,7 +237,11 @@ impl Client {
                 }
             }
         }
+    }
+}
 
-        Err("An error occurred".into())
+impl Drop for Client {
+    fn drop(&mut self) {
+        tracing::info!("Client dropped");
     }
 }

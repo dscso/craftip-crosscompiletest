@@ -105,8 +105,9 @@ impl GuiState {
             .find(|s| s.state != ServerState::Disconnected)
             .map(closure)
             .unwrap_or_else(|| {
-                tracing::warn!("No active server found!");
+                tracing::warn!("FIXME!!!!");
             });
+        self.request_repaint()
     }
     fn set_ctx(&mut self, ctx: egui::Context) {
         self.ctx = Some(ctx);
@@ -295,7 +296,7 @@ impl ServerPanel {
             });
             let (btn_txt, enabled) = match self.state {
                 ServerState::Disconnected => ("Connect", true),
-                ServerState::Connecting => ("Connecting...", false),
+                ServerState::Connecting => ("Stop connecting", true),
                 ServerState::Connected => ("Disconnect", true),
                 ServerState::Disconnecting => ("Disconnecting...", false),
             };
@@ -314,12 +315,9 @@ impl ServerPanel {
                 {
                     self.error = None;
                     match self.state {
-                        ServerState::Connected => {
+                        ServerState::Connected | ServerState::Connecting => {
                             self.state = ServerState::Disconnecting;
-                            tx.send(GuiTriggeredEvent::Disconnect(Server {
-                                server: self.server.clone(),
-                                local: self.local.clone(),
-                            }))
+                            tx.send(GuiTriggeredEvent::Disconnect())
                             .expect("failed to send disconnect event");
                         }
                         ServerState::Disconnected => {

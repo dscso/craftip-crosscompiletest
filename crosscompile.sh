@@ -10,12 +10,14 @@ docker rm crosscompiler
 echo "Starting new Dockercontainer, with volumes..."
 docker run -v $(pwd)/target-cross:/build/target                               \
            -v $(pwd)/Cargo.toml:/build/Cargo.toml:ro                          \
-           -v $(pwd)/src:/build/src:ro                                        \
+           -v $(pwd)/shared:/build/shared:ro                                  \
+           -v $(pwd)/client:/build/client:ro                                  \
+           -v $(pwd)/server:/build/server:ro                                  \
            --name crosscompiler    -d                                         \
            dscso/rust-crosscompiler:latest                                    \
            sleep infinity
 
-export cargocommand="source /entrypoint.sh && cargo build --bin client-gui --features gui --config /root/.cargo/config"
+export cargocommand="source /entrypoint.sh && cd client; cargo build --config /root/.cargo/config"
 
 if [ "$1" == "release" ]; then
   echo "Building release version!"
