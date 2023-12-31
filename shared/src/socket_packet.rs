@@ -9,7 +9,8 @@ use crate::datatypes::PacketError;
 use crate::datatypes::Protocol;
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
 use crate::proxy::{
-    ProxyClientDisconnectPacket, ProxyClientJoinPacket, ProxyDataPacket, ProxyHelloPacket, ProxyHelloResponsePacket
+    ProxyClientDisconnectPacket, ProxyClientJoinPacket, ProxyDataPacket, ProxyHelloPacket,
+    ProxyHelloResponsePacket,
 };
 
 pub type PingPacket = u16;
@@ -50,7 +51,6 @@ impl From<ProxyHelloResponsePacket> for SocketPacket {
         SocketPacket::ProxyHelloResponse(packet)
     }
 }
-
 
 impl From<ProxyClientJoinPacket> for SocketPacket {
     fn from(packet: ProxyClientJoinPacket) -> Self {

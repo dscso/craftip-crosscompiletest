@@ -3,14 +3,16 @@ use std::time::Duration;
 use std::time::SystemTime;
 
 use anyhow::{bail, Context, Result};
-use futures::{SinkExt};
+use futures::SinkExt;
+use thiserror::Error;
+use tokio::io;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 
-use shared::packet_codec::PacketCodec;
+use shared::packet_codec::{PacketCodec, PacketCodecError};
 use shared::proxy::{ProxyHandshakeResponse, ProxyHelloPacket};
 use shared::socket_packet::{ChannelMessage, SocketPacket};
 
@@ -29,6 +31,23 @@ pub enum Control {
     Disconnect,
 }
 
+#[derive(Error, Debug)]
+pub enum ClientError {
+    #[error("Io Error: {0}")]
+    Io(#[from] io::Error),
+    #[error("protocol error: {0}")]
+    ProtocolError(#[from] PacketCodecError),
+    #[error("Proxy closed the connection")]
+    ProxyClosedConnection,
+    #[error("User closed the connection")]
+    UserClosedConnection,
+    #[error("Proxy error: {0}")]
+    ProxyError(String),
+    #[error("Unexpected packet: {0}")]
+    UnexpectedPacket(String),
+    #[error("Other error: {0}")]
+    Other(#[from] anyhow::Error),
+}
 pub type Tx = mpsc::UnboundedSender<ChannelMessage<SocketPacket>>;
 pub type Rx = mpsc::UnboundedReceiver<ChannelMessage<SocketPacket>>;
 
@@ -93,7 +112,12 @@ impl Shared {
 }
 
 impl Client {
-    pub async fn new(proxy_server: String, mc_server: String, stats_tx: StatsTx, mut control_rx: ControlRx) -> Self {
+    pub async fn new(
+        proxy_server: String,
+        mc_server: String,
+        stats_tx: StatsTx,
+        mut control_rx: ControlRx,
+    ) -> Self {
         let mut state = Shared::new();
         state.set_stats_tx(stats_tx.clone());
         Client {
@@ -102,13 +126,13 @@ impl Client {
             stats_tx,
             state,
             control_rx,
-            proxy: None
+            proxy: None,
         }
     }
 }
 
 impl Client {
-    pub async fn connect(&mut self) -> Result<()> {
+    pub async fn connect(&mut self) -> Result<(), ClientError> {
         // todo good formatting
         let proxy_stream = TcpStream::connect(format!("{}:25565", &self.proxy_server)).await?;
         let mut proxy = Framed::new(proxy_stream, PacketCodec::new(1024 * 4));
@@ -122,16 +146,16 @@ impl Client {
             res = proxy.next() => match res {
                 Some(Ok(SocketPacket::ProxyHelloResponse(hello_response))) => {
                     if let ProxyHandshakeResponse::Err(e) = hello_response.status {
-                        bail!("Connection failed: {:?}", e);
+                        return Err(ClientError::ProxyError(e));
                     }
                 }
-                None => bail!("Server closed connection"),
-                e => bail!("Server did not respond as respected: {:?}", e)
+                None => return Err(ClientError::ProxyClosedConnection),
+                Some(Err(e)) => return Err(ClientError::ProtocolError(e)),
+                e => return Err(ClientError::UnexpectedPacket(format!("{:?}", e))),
             },
             res = self.control_rx.recv() => match res {
                 Some(Control::Disconnect) | None => {
-                    self.stats_tx.send(Stats::Connected)?;
-                    bail!("Connection canceled by user");
+                    return Err(ClientError::UserClosedConnection)
                 }
             }
         }

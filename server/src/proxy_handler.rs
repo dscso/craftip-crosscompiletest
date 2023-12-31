@@ -35,16 +35,32 @@ impl ProxyClient {
             .get_ref()
             .peer_addr()
             .map_err(distributor_error!("could not get peer addr"))?;
-        tokio::time::sleep(Duration::from_secs(2)).await;
-        distributor.lock().await.add_server(&packet.hostname, tx)?;
-        // send response to hello packet
-        let response = ProxyHelloResponsePacket {
+
+        let mut response = ProxyHelloResponsePacket {
             version: 123,
             status: ProxyHandshakeResponse::ConnectionSuccessful(),
         };
-        frames.send(SocketPacket::from(response)).await
-            .map_err(distributor_error!("could not send packet"))?;
-
+        match distributor.lock().await.add_server(&packet.hostname, tx) {
+            Ok(_) => {
+                frames
+                    .send(SocketPacket::from(response))
+                    .await
+                    .map_err(distributor_error!("could not send packet"))?;
+            }
+            Err(DistributorError::ServerAlreadyConnected) => {
+                response.status =
+                    ProxyHandshakeResponse::Err("Server already connected".to_string());
+                frames
+                    .send(SocketPacket::from(response))
+                    .await
+                    .map_err(distributor_error!("could not send packet"))?;
+                return Err(DistributorError::ServerAlreadyConnected);
+            }
+            Err(e) => {
+                tracing::error!("could not add server to distributor: {}", e);
+                return Err(e);
+            }
+        }
         Ok(ProxyClient {
             frames,
             rx,

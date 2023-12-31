@@ -34,7 +34,7 @@ impl Controller {
                             tracing::info!("Clients connected: {}", clients);
                             self.state.lock().unwrap().set_active_server(|s| {
                                 s.connected = clients;
-                            });
+                            }).unwrap();
                         }
                         Stats::Connected => {
                             tracing::info!("Connected to server!");
@@ -44,7 +44,7 @@ impl Controller {
                             self.state.lock().unwrap().set_active_server(|s| {
                                 s.state = ServerState::Connected;
                                 s.connected = 0;
-                            });
+                            }).unwrap();
                         }
                         Stats::Ping(_ping) => {}
                         _ => {
@@ -70,21 +70,30 @@ impl Controller {
                             let mut client = Client::new(server.server.clone(), server.local.clone(), stats_tx.clone(), control_rx).await;
                             tokio::spawn(async move {
                                 // connect
-                                let mut err = client.connect().await;
-                                if err.is_ok() {
-                                    state.lock().unwrap().set_active_server(|s| {
-                                        s.state = ServerState::Connected;
-                                    });
-                                    // handle handle connection if connection was successful
-                                    err = client.handle().await;
+                                match client.connect().await {
+                                    Ok(_) => {
+                                        state.lock().unwrap().set_active_server(|s| {
+                                            s.state = ServerState::Connected;
+                                        }).unwrap();
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Error connecting: {}", e);
+                                        state.lock().unwrap().set_active_server(|s| {
+                                            s.error = Some(format!("Error connecting: {}", e));
+                                            s.state = ServerState::Disconnected;
+                                        }).unwrap();
+                                        return;
+                                    }
                                 }
 
+                                // handle handle connection if connection was successful
+                                let err = client.handle().await;
                                 state.lock().unwrap().set_active_server(|s| {
                                     if let Err(e) = err {
-                                        s.error = Some(format!("Error connecting: {:?}", e));
+                                        s.error = Some(format!("Error connecting: {}", e));
                                     }
                                     s.state = ServerState::Disconnected;
-                                });
+                                }).unwrap();
                             });
                         }
                         GuiTriggeredEvent::Disconnect() => {

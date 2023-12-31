@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
+use anyhow::{bail, Context, Result};
 use std::sync::{Arc, Mutex};
 
 use eframe::egui::{CentralPanel, Color32, Layout, RichText, Ui};
@@ -99,15 +100,14 @@ impl GuiState {
         }
     }
     // set_active_server pass in closure the function that will be called on the active server
-    fn set_active_server(&mut self, closure: impl FnOnce(&mut ServerPanel)) {
+    fn set_active_server(&mut self, closure: impl FnOnce(&mut ServerPanel)) -> Result<()> {
         self.servers
             .iter_mut()
             .find(|s| s.state != ServerState::Disconnected)
             .map(closure)
-            .unwrap_or_else(|| {
-                tracing::warn!("FIXME!!!!");
-            });
-        self.request_repaint()
+            .context("no active server found")?;
+        self.request_repaint();
+        Ok(())
     }
     fn set_ctx(&mut self, ctx: egui::Context) {
         self.ctx = Some(ctx);
@@ -274,12 +274,12 @@ impl ServerPanel {
                                 }
                             }
                             ServerState::Connecting => {
-                                ui.label("");
+                                ui.label("Connecting...");
                                 ui.label("⌛");
                             }
 
                             ServerState::Disconnecting => {
-                                ui.label("");
+                                ui.label("Disconnecting...");
                                 ui.label("⌛");
                             }
                             ServerState::Connected => {
@@ -318,7 +318,7 @@ impl ServerPanel {
                         ServerState::Connected | ServerState::Connecting => {
                             self.state = ServerState::Disconnecting;
                             tx.send(GuiTriggeredEvent::Disconnect())
-                            .expect("failed to send disconnect event");
+                                .expect("failed to send disconnect event");
                         }
                         ServerState::Disconnected => {
                             self.state = ServerState::Connecting;

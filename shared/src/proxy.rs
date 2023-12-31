@@ -12,13 +12,13 @@ pub struct ProxyHelloPacket {
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub enum ProxyHandshakeResponse {
     ConnectionSuccessful(),
-    Err(String)
+    Err(String),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct ProxyHelloResponsePacket {
     pub version: i32,
-    pub status: ProxyHandshakeResponse
+    pub status: ProxyHandshakeResponse,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
