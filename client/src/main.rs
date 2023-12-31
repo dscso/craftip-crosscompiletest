@@ -29,8 +29,8 @@ pub async fn main() -> Result<(), eframe::Error> {
     tracing::subscriber::set_global_default(subscriber).unwrap();
 
     let options = eframe::NativeOptions {
-        initial_window_size: Some(egui::vec2(400.0, 600.0)),
         default_theme: Theme::Light,
+        viewport: egui::ViewportBuilder::default().with_inner_size([400.0, 600.0]),
         ..Default::default()
     };
     let (gui_tx, gui_rx) = mpsc::unbounded_channel();
