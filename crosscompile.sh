@@ -2,7 +2,7 @@
 
 echo "Building magic Docker container!"
 #docker build -t dscso/rust-crosscompiler:latest https://github.com/dscso/rust-crosscompiler.git#main
-docker pull dscso/rust-crosscompiler:latest
+#docker pull dscso/rust-crosscompiler:latest
 echo "Stopping old Dockercontainer"
 docker stop crosscompiler
 echo "Removing old Dockercontainer"

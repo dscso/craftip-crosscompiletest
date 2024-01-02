@@ -4,6 +4,7 @@ use eframe::egui::{Align, Color32, Layout, RichText};
 use crate::gui;
 use crate::gui::gui_elements::popup;
 
+#[derive(Default)]
 pub struct LoginPanel {
     pub open: bool,
     email: String,
@@ -11,15 +12,7 @@ pub struct LoginPanel {
 }
 
 // implement default for LoginPanel
-impl Default for LoginPanel {
-    fn default() -> Self {
-        Self {
-            open: true,
-            email: String::new(),
-            password: String::new(),
-        }
-    }
-}
+
 
 impl LoginPanel {
     pub(crate) fn update_login(&mut self, ctx: &egui::Context) {

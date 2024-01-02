@@ -1,11 +1,13 @@
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::time::sleep;
 
 use crate::client::{Client, ControlTx, Stats};
 use crate::gui::gui_channel::GuiTriggeredEvent;
 use crate::gui::gui_channel::ServerState;
-use crate::GuiState;
+use crate::{GuiState, ServerPanel};
 
 pub struct Controller {
     pub gui_rx: UnboundedReceiver<GuiTriggeredEvent>,
@@ -18,8 +20,46 @@ impl Controller {
     }
 
     pub async fn update(&mut self) {
-        let mut control_tx: Option<ControlTx> = None;
+        let servers = vec![
+            ServerPanel {
+                state: ServerState::Disconnected,
+                server: "myserver.craftip.net".to_string(),
+                connected: 0,
+                local: "25564".to_string(),
+                error: None,
+                edit_local: None
+            },
+            ServerPanel {
+                state: ServerState::Disconnected,
+                server: "myserver2.craftip.net".to_string(),
+                connected: 0,
+                local: "25564".to_string(),
+                error: None,
+                edit_local: None
+            },
+            ServerPanel {
+                state: ServerState::Disconnected,
+                server: "myserver3.craftip.net".to_string(),
+                connected: 0,
+                local: "25565".to_string(),
+                error: None,
+                edit_local: None
+            },
+            ServerPanel {
+                state: ServerState::Disconnected,
+                server: "hi".to_string(),
+                connected: 0,
+                local: "localhost:25564".to_string(),
+                error: None,
+                edit_local: None
+            },
+        ];
+        sleep(Duration::from_secs(2)).await;
+        self.state.lock().unwrap().modify(|state| {
+            state.servers = Some(servers);
+        });
 
+        let mut control_tx: Option<ControlTx> = None;
         let (stats_tx, mut stats_rx) = mpsc::unbounded_channel();
         loop {
             tokio::select! {
@@ -36,16 +76,7 @@ impl Controller {
                                 s.connected = clients;
                             }).unwrap();
                         }
-                        Stats::Connected => {
-                            tracing::info!("Connected to server!");
-                            // clean all errors
-                            self.state.lock().unwrap().servers.iter_mut().for_each(|s| s.error = None);
-                            // set active server to connected
-                            self.state.lock().unwrap().set_active_server(|s| {
-                                s.state = ServerState::Connected;
-                                s.connected = 0;
-                            }).unwrap();
-                        }
+                        Stats::Connected => {}
                         Stats::Ping(_ping) => {}
                         _ => {
                             tracing::error!("Unhandled stats: {:?}", result);
@@ -60,20 +91,26 @@ impl Controller {
                     let event = event.unwrap();
                     match event {
                         GuiTriggeredEvent::Connect(server) => {
-                            // sleep async 1 sec
                             tracing::info!("Connecting to server: {:?}", server);
+                            let minecraft_server = if server.local.contains(':') {
+                                server.local
+                            } else {
+                                format!("localhost:{}", server.local)
+                            };
 
-                            let (control_tx_new, mut control_rx) = mpsc::unbounded_channel();
+                            let (control_tx_new, control_rx) = mpsc::unbounded_channel();
                             control_tx = Some(control_tx_new);
 
                             let state = self.state.clone();
-                            let mut client = Client::new(server.server.clone(), server.local.clone(), stats_tx.clone(), control_rx).await;
+                            let mut client = Client::new(server.server, minecraft_server, stats_tx.clone(), control_rx).await;
                             tokio::spawn(async move {
                                 // connect
                                 match client.connect().await {
                                     Ok(_) => {
                                         state.lock().unwrap().set_active_server(|s| {
                                             s.state = ServerState::Connected;
+                                            s.connected = 0;
+                                            s.error = None;
                                         }).unwrap();
                                     }
                                     Err(e) => {

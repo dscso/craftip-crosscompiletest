@@ -43,6 +43,8 @@ pub enum ClientError {
     UserClosedConnection,
     #[error("Proxy error: {0}")]
     ProxyError(String),
+    #[error("Minecraft server error. Is the server running?")]
+    MinecraftServerNotFound,
     #[error("Unexpected packet: {0}")]
     UnexpectedPacket(String),
     #[error("Other error: {0}")]
@@ -133,7 +135,8 @@ impl Client {
 
 impl Client {
     pub async fn connect(&mut self) -> Result<(), ClientError> {
-        // todo good formatting
+        TcpStream::connect(&self.mc_server).await.map_err(|_|ClientError::MinecraftServerNotFound)?;
+
         let proxy_stream = TcpStream::connect(format!("{}:25565", &self.proxy_server)).await?;
         let mut proxy = Framed::new(proxy_stream, PacketCodec::new(1024 * 4));
 
@@ -160,6 +163,7 @@ impl Client {
             }
         }
         tracing::info!("Connected to proxy server!");
+        self.stats_tx.send(Stats::Connected).map_err(|e| ClientError::Other(e.into()))?;
         self.proxy = Some(proxy);
         Ok(())
     }
@@ -181,12 +185,8 @@ impl Client {
                 // if any client handler dies, return error
                 result = client_handler_death_rx.recv() => {
                     match result {
-                        Some(e) => {
-                            bail!(e);
-                        }
-                        None => {
-                            bail!("client handler died");
-                        }
+                        Some(e) => bail!(e),
+                        None => bail!("client handler died")
                     }
                 }
                 // send packets to proxy
@@ -196,9 +196,7 @@ impl Client {
                         ChannelMessage::Packet(pkg) => {
                             proxy.send(pkg).await?;
                         }
-                        ChannelMessage::Close => {
-                            bail!("all clients dropped");
-                        }
+                        ChannelMessage::Close => bail!("all clients dropped")
                     }
                 }
                 // receive proxy packets
@@ -233,24 +231,13 @@ impl Client {
                                     let ping = time.saturating_sub(ping);
                                     self.stats_tx.send(Stats::Ping(ping))?;
                                 }
-                                _ => {
-                                    unimplemented!("Message not implemented!")
-                                }
+                                _ => unimplemented!("Message not implemented!")
                             }
                         }
                         // An error occurred.
-                        Some(Err(e)) => {
-                            tracing::error!(
-                                "an error occurred while processing messages error = {:?}",
-                                e
-                            );
-                            return Err(e.into());
-                        }
+                        Some(Err(e)) => bail!("an error occurred while processing messages error = {:?}", e),
                         // The stream has been exhausted.
-                        None => {
-                            tracing::info!("Proxy has closed the connection");
-                            bail!("Proxy has closed the connection");
-                        },
+                        None => bail!("Proxy has closed the connection")
                     }
                 },
                 // ensure constant traffic so tcp connection does not close

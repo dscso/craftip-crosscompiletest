@@ -35,7 +35,6 @@ impl ProxyClient {
             .get_ref()
             .peer_addr()
             .map_err(distributor_error!("could not get peer addr"))?;
-
         let mut response = ProxyHelloResponsePacket {
             version: 123,
             status: ProxyHandshakeResponse::ConnectionSuccessful(),

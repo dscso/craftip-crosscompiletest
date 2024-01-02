@@ -1,4 +1,7 @@
-use tokio::sync::mpsc;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
+use tokio::sync::{mpsc};
+use crate::GuiState;
 
 pub type GuiTriggeredChannel = mpsc::UnboundedSender<GuiTriggeredEvent>;
 
