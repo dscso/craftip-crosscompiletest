@@ -31,6 +31,8 @@ pub enum DistributorError {
     ServerAlreadyConnected,
     #[error("ServerNotConnected")]
     ServerNotConnected(String),
+    #[error("Auth Error")]
+    AuthError,
     #[error("TooManyClients")]
     TooManyClients,
     #[error("UnknownError")]

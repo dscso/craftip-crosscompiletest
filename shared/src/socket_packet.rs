@@ -3,15 +3,14 @@ use std::mem::size_of;
 
 use bytes::{Buf, BytesMut};
 use serde::{Deserialize, Serialize};
+use crate::crypto::{ChallengeDataType, SignatureDataType};
+use serde_big_array::BigArray;
 
 use crate::cursor::{CustomCursor, CustomCursorMethods};
 use crate::datatypes::PacketError;
 use crate::datatypes::Protocol;
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
-use crate::proxy::{
-    ProxyClientDisconnectPacket, ProxyClientJoinPacket, ProxyDataPacket, ProxyHelloPacket,
-    ProxyHelloResponsePacket,
-};
+use crate::proxy::{ProxyClientDisconnectPacket, ProxyClientJoinPacket, ProxyDataPacket, ProxyHelloPacket, ProxyHelloResponsePacket, ProxyAuthRequestPacket, ProxyAuthResponePacket};
 
 pub type PingPacket = u16;
 
@@ -20,9 +19,14 @@ pub enum SocketPacket {
     MCHello(MinecraftHelloPacket),
     MCData(MinecraftDataPacket),
     ProxyHello(ProxyHelloPacket),
+    #[serde(with = "BigArray")]
+    ProxyAuthRequest(ChallengeDataType),
+    #[serde(with = "BigArray")]
+    ProxyAuthResponse(SignatureDataType),
     ProxyHelloResponse(ProxyHelloResponsePacket),
     ProxyJoin(ProxyClientJoinPacket),
     ProxyDisconnect(ProxyClientDisconnectPacket),
+    ProxyError(String),
     ProxyData(ProxyDataPacket),
     ProxyPing(PingPacket),
     ProxyPong(PingPacket),

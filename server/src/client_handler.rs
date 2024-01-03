@@ -160,9 +160,16 @@ pub async fn process_socket_connection(
                     .peer_addr()
                     .map_err(distributor_error!("could not get peer addr"))?
             );
-            let mut client = ProxyClient::new(distributor.clone(), frames, packet).await?;
+            let mut client = match ProxyClient::new(distributor.clone(), &mut frames, packet).await {
+                Ok(client) => client,
+                Err(e) => {
+                    tracing::warn!("could not add proxy client: {}", e);
+                    frames.send(SocketPacket::ProxyError(format!("Error {e}"))).await.map_err(distributor_error!("could not send packet"))?;
+                    return Err(e);
+                }
+            };
 
-            let response = client.handle().await;
+            let response = client.handle(&mut frames).await;
             client.close_connection().await;
             response?;
         }

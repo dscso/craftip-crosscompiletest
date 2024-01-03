@@ -13,10 +13,12 @@ use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 
 use shared::packet_codec::{PacketCodec, PacketCodecError};
-use shared::proxy::{ProxyHandshakeResponse, ProxyHelloPacket};
+use shared::proxy::{ProxyAuthenticator, ProxyHelloPacket};
 use shared::socket_packet::{ChannelMessage, SocketPacket};
 
 use crate::connection_handler::ClientConnection;
+use crate::gui::gui_channel::Server;
+use crate::ServerAuthentication;
 
 #[derive(Debug)]
 pub enum Stats {
@@ -63,12 +65,11 @@ pub type StatsTx = mpsc::UnboundedSender<Stats>;
 pub type StatsRx = mpsc::UnboundedReceiver<Stats>;
 
 pub struct Client {
-    proxy_server: String,
-    mc_server: String,
     state: Shared,
     stats_tx: StatsTx,
     proxy: Option<Framed<TcpStream, PacketCodec>>,
-    pub control_rx: ControlRx,
+    control_rx: ControlRx,
+    server: Server,
 }
 
 pub struct Shared {
@@ -115,16 +116,14 @@ impl Shared {
 
 impl Client {
     pub async fn new(
-        proxy_server: String,
-        mc_server: String,
+        server: Server,
         stats_tx: StatsTx,
         mut control_rx: ControlRx,
     ) -> Self {
         let mut state = Shared::new();
         state.set_stats_tx(stats_tx.clone());
         Client {
-            proxy_server,
-            mc_server,
+            server,
             stats_tx,
             state,
             control_rx,
@@ -135,23 +134,39 @@ impl Client {
 
 impl Client {
     pub async fn connect(&mut self) -> Result<(), ClientError> {
-        TcpStream::connect(&self.mc_server).await.map_err(|_|ClientError::MinecraftServerNotFound)?;
-
-        let proxy_stream = TcpStream::connect(format!("{}:25565", &self.proxy_server)).await?;
+        // test connection to minecraft server
+        TcpStream::connect(&self.server.local).await.map_err(|_|ClientError::MinecraftServerNotFound)?;
+        // connect to proxy
+        let proxy_stream = TcpStream::connect(format!("{}:25565", &self.server.server)).await?;
         let mut proxy = Framed::new(proxy_stream, PacketCodec::new(1024 * 4));
 
         let hello = SocketPacket::from(ProxyHelloPacket {
             version: 123,
-            hostname: self.proxy_server.clone(),
+            hostname: self.server.server.clone(),
+            auth: match &mut self.server.auth {
+                ServerAuthentication::Key(private_key) => {ProxyAuthenticator::PublicKey(private_key.get_public_key())}
+            }
         });
+
         proxy.send(hello).await?;
+
+        let packet = proxy.next().await.unwrap().unwrap();
+
+        if let SocketPacket::ProxyAuthRequest(challenge) = packet {
+            match &mut self.server.auth {
+                ServerAuthentication::Key(private_key) => {
+                    let mut signature = private_key.sign(&challenge);
+                    proxy.send(SocketPacket::ProxyAuthResponse(signature)).await?;
+                }
+            }
+        } else {
+            return Err(ClientError::UnexpectedPacket(format!("{:?}", packet)));
+        }
+
         tokio::select! {
             res = proxy.next() => match res {
-                Some(Ok(SocketPacket::ProxyHelloResponse(hello_response))) => {
-                    if let ProxyHandshakeResponse::Err(e) = hello_response.status {
-                        return Err(ClientError::ProxyError(e));
-                    }
-                }
+                Some(Ok(SocketPacket::ProxyHelloResponse(hello_response))) => {},
+                Some(Ok(SocketPacket::ProxyError(e))) => return Err(ClientError::ProxyError(e)),
                 None => return Err(ClientError::ProxyClosedConnection),
                 Some(Err(e)) => return Err(ClientError::ProtocolError(e)),
                 e => return Err(ClientError::UnexpectedPacket(format!("{:?}", e))),
@@ -205,7 +220,7 @@ impl Client {
                         Some(Ok(msg)) => {
                             match msg {
                                 SocketPacket::ProxyJoin(packet) => {
-                                    let (mut client_connection, client_tx) = ClientConnection::new(to_proxy_tx.clone(), self.mc_server.clone(), packet.client_id).await;
+                                    let (mut client_connection, client_tx) = ClientConnection::new(to_proxy_tx.clone(), self.server.local.clone(), packet.client_id).await;
                                     self.state.add_connection(packet.client_id, client_tx);
                                     let client_handler_death_tx = client_handler_death_tx.clone();
                                     tokio::spawn(async move {

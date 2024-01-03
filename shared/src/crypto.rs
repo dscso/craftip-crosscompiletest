@@ -9,13 +9,16 @@ const BASE36_ENCODER_STRING: &str = "0123456789abcdefghijklmnopqrstuvwxyz";
 const PREFIX: &str = "CraftIPServerHost";
 const HOSTNAME_LENGTH: usize = 20;
 
+pub type ChallengeDataType = [u8; 64];
+pub type SignatureDataType = [u8; 64];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerPrivateKey {
     #[serde(with = "BigArray")]
     key: [u8; 83],
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct ServerPublicKey {
     key: [u8; 32],
 }
@@ -53,10 +56,10 @@ impl TryFrom<&str> for ServerPrivateKey {
     }
 }
 impl ServerPrivateKey {
-    pub fn sign(&self, data: &[u8]) -> [u8; 64] {
+    pub fn sign(&self, data: &[u8]) -> SignatureDataType {
         let data = create_challenge(data);
         let key_pair = signature::Ed25519KeyPair::from_pkcs8(self.key.as_ref()).unwrap();
-        let mut result = [0u8; 64];
+        let mut result: SignatureDataType = [0u8; 64];
         let signature = key_pair.sign(data.as_ref());
         result.copy_from_slice(signature.as_ref());
         result
@@ -102,13 +105,13 @@ impl ServerPublicKey {
         let checksum = base_x::encode(BASE36_ENCODER_STRING, checksum.as_ref());
         checksum[0..HOSTNAME_LENGTH].to_string()
     }
-    pub fn create_challange(&self) -> [u8; 64] {
+    pub fn create_challange(&self) -> ChallengeDataType {
         let rng = rand::SystemRandom::new();
         let mut result = [0u8; 64];
         rng.fill(&mut result).unwrap();
         result
     }
-    pub fn verify(&self, data: &[u8], signature: &[u8]) -> bool {
+    pub fn verify(&self, data: &ChallengeDataType, signature: &SignatureDataType) -> bool {
         let data = create_challenge(data);
         let key = signature::UnparsedPublicKey::new(&signature::ED25519, self.key.as_ref());
         key.verify(data.as_ref(), signature).is_ok()
@@ -122,9 +125,7 @@ impl fmt::Display for ServerPublicKey {
 }
 #[cfg(test)]
 mod tests {
-    use crate::{ServerPrivateKey};
-    use crate::gui::api::{BASE36_ENCODER_STRING, ServerPublicKey};
-
+    use crate::crypto::{ServerPrivateKey, BASE36_ENCODER_STRING, ServerPublicKey};
 
     #[test]
     fn test() {

@@ -50,18 +50,17 @@ impl Controller {
                     let event = event.unwrap();
                     match event {
                         GuiTriggeredEvent::Connect(server) => {
+                            let mut server = server.clone();
                             tracing::info!("Connecting to server: {:?}", server);
-                            let minecraft_server = if server.local.contains(':') {
-                                server.local
-                            } else {
-                                format!("localhost:{}", server.local)
-                            };
+                            if !server.local.contains(':') {
+                                server.server = format!("{}:{}", server.server, server.local);
+                            }
 
                             let (control_tx_new, control_rx) = mpsc::unbounded_channel();
                             control_tx = Some(control_tx_new);
 
                             let state = self.state.clone();
-                            let mut client = Client::new(server.server, minecraft_server, stats_tx.clone(), control_rx).await;
+                            let mut client = Client::new(server, stats_tx.clone(), control_rx).await;
                             tokio::spawn(async move {
                                 // connect
                                 match client.connect().await {
