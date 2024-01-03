@@ -1,4 +1,6 @@
 pub mod addressing;
+pub mod config;
+pub mod crypto;
 mod cursor;
 mod datatypes;
 pub mod minecraft;
@@ -7,5 +9,3 @@ pub mod proxy;
 pub mod socket_packet;
 mod test;
 mod util;
-pub mod crypto;
-pub mod config;

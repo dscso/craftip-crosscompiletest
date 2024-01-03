@@ -1,5 +1,5 @@
+use crate::crypto::{ChallengeDataType, ServerPublicKey, SignatureDataType};
 use serde::{Deserialize, Serialize};
-use crate::crypto::{ChallengeDataType, SignatureDataType, ServerPublicKey};
 use serde_big_array::BigArray;
 
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
@@ -9,7 +9,7 @@ use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
 pub struct ProxyHelloPacket {
     pub version: i32,
     pub hostname: String,
-    pub auth: ProxyAuthenticator
+    pub auth: ProxyAuthenticator,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
@@ -34,9 +34,8 @@ pub enum ProxyAuthResponePacket {
     PublicKey(SignatureDataType),
 }
 
-
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
-pub struct ProxyHelloResponsePacket {
+pub struct ProxyConnectedResponse {
     pub version: i32,
 }
 

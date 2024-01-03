@@ -21,7 +21,7 @@ macro_rules! distributor_error {
     })
 }
 
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error)]
 pub enum DistributorError {
     #[error("ClientNotFound")]
     ClientNotFound,
@@ -37,6 +37,8 @@ pub enum DistributorError {
     TooManyClients,
     #[error("UnknownError")]
     UnknownError(String),
+    #[error("IO Error")]
+    IoError(#[from] std::io::Error),
 }
 
 type ServerHostname = String;

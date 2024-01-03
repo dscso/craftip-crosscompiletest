@@ -12,7 +12,7 @@ use shared::addressing::{Distributor, DistributorError, Rx};
 use shared::distributor_error;
 use shared::minecraft::MinecraftDataPacket;
 use shared::packet_codec::PacketCodec;
-use shared::proxy::{ProxyAuthenticator, ProxyAuthRequestPacket, ProxyAuthResponePacket, ProxyHandshakeResponse, ProxyHelloPacket, ProxyHelloResponsePacket};
+use shared::proxy::{ProxyAuthenticator, ProxyConnectedResponse, ProxyHelloPacket};
 use shared::socket_packet::{ChannelMessage, SocketPacket};
 
 #[derive(Debug)]
@@ -40,11 +40,16 @@ impl ProxyClient {
                 let challenge = public_key.create_challange();
                 let auth_request = SocketPacket::ProxyAuthRequest(challenge);
 
-                frames.send(auth_request).await.map_err(distributor_error!("could not send packet"))?;
+                frames.send(auth_request).await?;
 
                 let signature = match frames.next().await {
                     Some(Ok(SocketPacket::ProxyAuthResponse(signature))) => signature,
-                    e => return Err(DistributorError::UnknownError(format!("Invalid auth response {:?}", e)))
+                    e => {
+                        return Err(DistributorError::UnknownError(format!(
+                            "Invalid auth response {:?}",
+                            e
+                        )))
+                    }
                 };
 
                 if public_key.verify(&challenge, &signature) {
@@ -54,12 +59,13 @@ impl ProxyClient {
                 }
             }
         }
-        let mut response = ProxyHelloResponsePacket {
-            version: 123,
-        };
+        // add client to distributor
         distributor.lock().await.add_server(&packet.hostname, tx)?;
-        let resp = SocketPacket::from(ProxyHelloResponsePacket { version: 123 });
-        frames.send(resp).await.map_err(distributor_error!("could not send packet"))?;
+
+        // send connected
+        let resp = SocketPacket::from(ProxyConnectedResponse { version: 123 });
+        frames.send(resp).await?;
+
         Ok(ProxyClient {
             rx,
             addr,
@@ -68,13 +74,16 @@ impl ProxyClient {
         })
     }
     /// HANDLE PROXY CLIENT
-    pub async fn handle(&mut self, framed: &mut Framed<TcpStream, PacketCodec>) -> Result<(), DistributorError> {
+    pub async fn handle(
+        &mut self,
+        framed: &mut Framed<TcpStream, PacketCodec>,
+    ) -> Result<(), DistributorError> {
         loop {
             tokio::select! {
                 result = self.rx.recv() => {
                     match result {
                         Some(ChannelMessage::Packet(pkg)) => {
-                            framed.send(pkg).await.map_err(distributor_error!("could not send packet"))?;
+                            framed.send(pkg).await?;
                         }
                         _ => {
                             tracing::info!("connection closed by another side of unbound channel");
@@ -123,8 +132,7 @@ impl ProxyClient {
                                         }
                                 }
                                 SocketPacket::ProxyPing(packet) => {
-                                    framed.send(SocketPacket::ProxyPong(packet)).await
-                                        .map_err(distributor_error!("could not send packet"))?
+                                    framed.send(SocketPacket::ProxyPong(packet)).await?
                                 }
                                 packet => {
                                     tracing::info!("Received proxy packet: {:?}", packet);

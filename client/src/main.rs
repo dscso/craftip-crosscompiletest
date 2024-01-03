@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use eframe::egui::{CentralPanel, Color32, Label, Layout, RichText, TextEdit, Ui};
 use eframe::emath::Align;
-use eframe::{CreationContext, egui, Storage, Theme};
+use eframe::{egui, CreationContext, Storage, Theme};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
@@ -157,13 +157,13 @@ impl eframe::App for MyApp {
 
             // enable/disable connect, disconnect buttons
             if let Some(servers) = &mut state.servers {
-                let already_connected = servers.iter().any(|s| s.state != ServerState::Disconnected);
+                let already_connected =
+                    servers.iter().any(|s| s.state != ServerState::Disconnected);
 
-                servers.iter_mut()
-                    .for_each(|server| {
-                        let enabled = !already_connected || server.state != ServerState::Disconnected;
-                        server.render(ui, &mut self.tx, enabled)
-                    });
+                servers.iter_mut().for_each(|server| {
+                    let enabled = !already_connected || server.state != ServerState::Disconnected;
+                    server.render(ui, &mut self.tx, enabled)
+                });
                 if servers.is_empty() {
                     ui.label("No servers found");
                 }
@@ -184,7 +184,16 @@ impl eframe::App for MyApp {
     }
     fn save(&mut self, storage: &mut dyn Storage) {
         tracing::info!("Saving server key...");
-        let servers: Vec<Server> = self.state.lock().unwrap().servers.as_ref().unwrap().iter().map(|s| Server::from(s)).collect();
+        let servers: Vec<Server> = self
+            .state
+            .lock()
+            .unwrap()
+            .servers
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|s| Server::from(s))
+            .collect();
         storage.set_string("servers", serde_json::to_string(&servers).unwrap());
     }
 }
@@ -203,7 +212,6 @@ struct ServerPanel {
     state: ServerState,
     error: Option<String>,
 }
-
 
 impl From<&Server> for ServerPanel {
     fn from(server: &Server) -> Self {

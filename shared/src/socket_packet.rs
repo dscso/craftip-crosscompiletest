@@ -1,16 +1,19 @@
 use std::io::Write;
 use std::mem::size_of;
 
+use crate::crypto::{ChallengeDataType, SignatureDataType};
 use bytes::{Buf, BytesMut};
 use serde::{Deserialize, Serialize};
-use crate::crypto::{ChallengeDataType, SignatureDataType};
 use serde_big_array::BigArray;
 
 use crate::cursor::{CustomCursor, CustomCursorMethods};
 use crate::datatypes::PacketError;
 use crate::datatypes::Protocol;
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
-use crate::proxy::{ProxyClientDisconnectPacket, ProxyClientJoinPacket, ProxyDataPacket, ProxyHelloPacket, ProxyHelloResponsePacket, ProxyAuthRequestPacket, ProxyAuthResponePacket};
+use crate::proxy::{
+    ProxyAuthRequestPacket, ProxyAuthResponePacket, ProxyClientDisconnectPacket,
+    ProxyClientJoinPacket, ProxyConnectedResponse, ProxyDataPacket, ProxyHelloPacket,
+};
 
 pub type PingPacket = u16;
 
@@ -23,7 +26,7 @@ pub enum SocketPacket {
     ProxyAuthRequest(ChallengeDataType),
     #[serde(with = "BigArray")]
     ProxyAuthResponse(SignatureDataType),
-    ProxyHelloResponse(ProxyHelloResponsePacket),
+    ProxyHelloResponse(ProxyConnectedResponse),
     ProxyJoin(ProxyClientJoinPacket),
     ProxyDisconnect(ProxyClientDisconnectPacket),
     ProxyError(String),
@@ -50,8 +53,8 @@ impl From<ProxyHelloPacket> for SocketPacket {
         SocketPacket::ProxyHello(packet)
     }
 }
-impl From<ProxyHelloResponsePacket> for SocketPacket {
-    fn from(packet: ProxyHelloResponsePacket) -> Self {
+impl From<ProxyConnectedResponse> for SocketPacket {
+    fn from(packet: ProxyConnectedResponse) -> Self {
         SocketPacket::ProxyHelloResponse(packet)
     }
 }

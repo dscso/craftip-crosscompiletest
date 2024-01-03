@@ -1,9 +1,9 @@
-use std::fmt;
-use ring::{rand, signature, digest};
 use ring::rand::SecureRandom;
 use ring::signature::KeyPair;
+use ring::{digest, rand, signature};
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
+use std::fmt;
 
 const BASE36_ENCODER_STRING: &str = "0123456789abcdefghijklmnopqrstuvwxyz";
 const PREFIX: &str = "CraftIPServerHost";
@@ -33,9 +33,7 @@ impl Default for ServerPrivateKey {
         let key = pkcs8_bytes.as_ref();
         let mut result = [0u8; 83];
         result.copy_from_slice(key);
-        Self {
-            key: result
-        }
+        Self { key: result }
     }
 }
 
@@ -50,9 +48,7 @@ impl TryFrom<&str> for ServerPrivateKey {
         }
         let mut key = [0u8; 83];
         key.copy_from_slice(&key_vec);
-        Ok(Self {
-            key
-        })
+        Ok(Self { key })
     }
 }
 impl ServerPrivateKey {
@@ -68,9 +64,7 @@ impl ServerPrivateKey {
         let key_pair = signature::Ed25519KeyPair::from_pkcs8(self.key.as_ref()).unwrap();
         let mut result = [0u8; 32];
         result.copy_from_slice(key_pair.public_key().as_ref());
-        ServerPublicKey {
-            key: result
-        }
+        ServerPublicKey { key: result }
     }
 }
 
@@ -85,15 +79,13 @@ impl TryFrom<&str> for ServerPublicKey {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let mut result = [0u8; 32];
-        let bytes = base_x::decode(BASE36_ENCODER_STRING, value)
-            .map_err(|_| "invalid base36 string")?;
+        let bytes =
+            base_x::decode(BASE36_ENCODER_STRING, value).map_err(|_| "invalid base36 string")?;
         if bytes.len() != 32 {
             return Err("invalid length");
         }
         result.copy_from_slice(&bytes);
-        Ok(Self {
-            key: result
-        })
+        Ok(Self { key: result })
     }
 }
 
@@ -120,12 +112,16 @@ impl ServerPublicKey {
 
 impl fmt::Display for ServerPublicKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", base_x::encode(BASE36_ENCODER_STRING, self.key.as_ref()))
+        write!(
+            f,
+            "{}",
+            base_x::encode(BASE36_ENCODER_STRING, self.key.as_ref())
+        )
     }
 }
 #[cfg(test)]
 mod tests {
-    use crate::crypto::{ServerPrivateKey, BASE36_ENCODER_STRING, ServerPublicKey};
+    use crate::crypto::{ServerPrivateKey, ServerPublicKey, BASE36_ENCODER_STRING};
 
     #[test]
     fn test() {
@@ -160,4 +156,3 @@ mod tests {
         assert!(!public.verify(&challenge, &signature));
     }
 }
-

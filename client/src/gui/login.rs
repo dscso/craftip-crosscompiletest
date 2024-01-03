@@ -13,7 +13,6 @@ pub struct LoginPanel {
 
 // implement default for LoginPanel
 
-
 impl LoginPanel {
     pub(crate) fn update_login(&mut self, ctx: &egui::Context) {
         if !self.open {

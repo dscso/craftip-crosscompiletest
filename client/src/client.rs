@@ -115,11 +115,7 @@ impl Shared {
 }
 
 impl Client {
-    pub async fn new(
-        server: Server,
-        stats_tx: StatsTx,
-        mut control_rx: ControlRx,
-    ) -> Self {
+    pub async fn new(server: Server, stats_tx: StatsTx, mut control_rx: ControlRx) -> Self {
         let mut state = Shared::new();
         state.set_stats_tx(stats_tx.clone());
         Client {
@@ -135,7 +131,9 @@ impl Client {
 impl Client {
     pub async fn connect(&mut self) -> Result<(), ClientError> {
         // test connection to minecraft server
-        TcpStream::connect(&self.server.local).await.map_err(|_|ClientError::MinecraftServerNotFound)?;
+        TcpStream::connect(&self.server.local)
+            .await
+            .map_err(|_| ClientError::MinecraftServerNotFound)?;
         // connect to proxy
         let proxy_stream = TcpStream::connect(format!("{}:25565", &self.server.server)).await?;
         let mut proxy = Framed::new(proxy_stream, PacketCodec::new(1024 * 4));
@@ -144,8 +142,10 @@ impl Client {
             version: 123,
             hostname: self.server.server.clone(),
             auth: match &mut self.server.auth {
-                ServerAuthentication::Key(private_key) => {ProxyAuthenticator::PublicKey(private_key.get_public_key())}
-            }
+                ServerAuthentication::Key(private_key) => {
+                    ProxyAuthenticator::PublicKey(private_key.get_public_key())
+                }
+            },
         });
 
         proxy.send(hello).await?;
@@ -156,7 +156,9 @@ impl Client {
             match &mut self.server.auth {
                 ServerAuthentication::Key(private_key) => {
                     let mut signature = private_key.sign(&challenge);
-                    proxy.send(SocketPacket::ProxyAuthResponse(signature)).await?;
+                    proxy
+                        .send(SocketPacket::ProxyAuthResponse(signature))
+                        .await?;
                 }
             }
         } else {
@@ -178,7 +180,9 @@ impl Client {
             }
         }
         tracing::info!("Connected to proxy server!");
-        self.stats_tx.send(Stats::Connected).map_err(|e| ClientError::Other(e.into()))?;
+        self.stats_tx
+            .send(Stats::Connected)
+            .map_err(|e| ClientError::Other(e.into()))?;
         self.proxy = Some(proxy);
         Ok(())
     }

@@ -1,10 +1,7 @@
-use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use crate::{ServerAuthentication, ServerPanel};
 use serde::{Deserialize, Serialize};
-use tokio::sync::{mpsc};
-use tracing_subscriber::fmt::format;
 use shared::crypto::ServerPrivateKey;
-use crate::{GuiState, ServerAuthentication, ServerPanel};
+use tokio::sync::mpsc;
 
 pub type GuiTriggeredChannel = mpsc::UnboundedSender<GuiTriggeredEvent>;
 
@@ -21,7 +18,7 @@ pub enum GuiTriggeredEvent {
 pub struct Server {
     pub server: String,
     pub local: String,
-    pub auth: ServerAuthentication
+    pub auth: ServerAuthentication,
 }
 
 impl From<&ServerPanel> for Server {
@@ -29,7 +26,7 @@ impl From<&ServerPanel> for Server {
         Self {
             server: server_panel.server.clone(),
             local: server_panel.local.clone(),
-            auth: server_panel.auth.clone()
+            auth: server_panel.auth.clone(),
         }
     }
 }
@@ -39,7 +36,7 @@ impl Server {
         Self {
             server: format!("{}{}", id, shared::config::KEY_SERVER_SUFFIX),
             local: "25565".to_string(),
-            auth: ServerAuthentication::Key(key)
+            auth: ServerAuthentication::Key(key),
         }
     }
 }
