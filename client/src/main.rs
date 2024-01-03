@@ -1,18 +1,18 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use std::future::Future;
-use std::pin::Pin;
 use anyhow::{Context, Result};
 use std::sync::{Arc, Mutex};
 
 use eframe::egui::{CentralPanel, Color32, Label, Layout, RichText, TextEdit, Ui};
 use eframe::emath::Align;
-use eframe::{egui, Theme};
+use eframe::{CreationContext, egui, Storage, Theme};
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
 use crate::gui::gui_channel::{GuiTriggeredChannel, GuiTriggeredEvent, Server, ServerState};
 use crate::gui::gui_elements::popup;
 use crate::gui::login::LoginPanel;
+use shared::crypto::ServerPrivateKey;
 
 mod client;
 mod connection_handler;
@@ -33,24 +33,16 @@ pub async fn main() -> Result<(), eframe::Error> {
 
     let options = eframe::NativeOptions {
         default_theme: Theme::Light,
-        viewport: egui::ViewportBuilder::default().with_inner_size([400.0, 600.0]),
+        viewport: egui::ViewportBuilder::default().with_inner_size([500.0, 400.0]),
         ..Default::default()
     };
-    let (gui_tx, gui_rx) = mpsc::unbounded_channel();
-    let state = Arc::new(Mutex::new(GuiState::new()));
-    let state_clone = state.clone();
-    tokio::spawn(async move {
-        let mut controller = gui::backend::Controller::new(gui_rx, state_clone);
-        controller.update().await;
-    });
 
     eframe::run_native(
         "CraftIP",
         options,
         Box::new(|cc| {
             // add context to state to redraw from other threads
-            state.lock().unwrap().set_ctx(cc.egui_ctx.clone());
-            Box::new(MyApp::new(gui_tx, state))
+            Box::new(MyApp::new(cc))
         }),
     )
 }
@@ -107,9 +99,33 @@ struct MyApp {
 }
 
 impl MyApp {
-    fn new(tx: GuiTriggeredChannel, state: Arc<Mutex<GuiState>>) -> Self {
+    fn new(cc: &CreationContext) -> Self {
+        let storage = cc.storage.unwrap();
+        let servers = match storage.get_string("servers") {
+            Some(servers) => {
+                let servers: Vec<Server> = serde_json::from_str(&servers).unwrap();
+                servers
+            }
+            None => {
+                let key = ServerPrivateKey::default();
+                let server = Server::new_from_key(key);
+                vec![server]
+            }
+        };
+        let server_panels = Some(servers.iter().map(|s| ServerPanel::from(s)).collect());
+        let (gui_tx, gui_rx) = mpsc::unbounded_channel();
+        let mut state = GuiState::new();
+        state.servers = server_panels;
+        state.set_ctx(cc.egui_ctx.clone());
+        let state = Arc::new(Mutex::new(state));
+        let mut controller = gui::backend::Controller::new(gui_rx, state.clone());
+
+        tokio::spawn(async move {
+            controller.update().await;
+        });
+
         Self {
-            tx,
+            tx: gui_tx,
             login_panel: LoginPanel::default(),
             edit_panel: EditPanel::default(),
             state,
@@ -166,11 +182,21 @@ impl eframe::App for MyApp {
             }
         });
     }
+    fn save(&mut self, storage: &mut dyn Storage) {
+        tracing::info!("Saving server key...");
+        let servers: Vec<Server> = self.state.lock().unwrap().servers.as_ref().unwrap().iter().map(|s| Server::from(s)).collect();
+        storage.set_string("servers", serde_json::to_string(&servers).unwrap());
+    }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum ServerAuthentication {
+    Key(ServerPrivateKey),
+}
 #[derive(Debug, Clone)]
 struct ServerPanel {
     server: String,
+    auth: ServerAuthentication,
     connected: u16,
     local: String,
     edit_local: Option<String>,
@@ -178,18 +204,17 @@ struct ServerPanel {
     error: Option<String>,
 }
 
-pub enum PreparedMigration {
-    Simple(String),
-    Closure(Pin<Box<dyn FnOnce(&String) -> Pin<Box<dyn Future<Output = bool>>>>>)
-}
 
-impl Default for ServerPanel {
-    fn default() -> Self {
+impl From<&Server> for ServerPanel {
+    fn from(server: &Server) -> Self {
+        let name = server.server.clone();
+        //let name = name.trim_end_matches(&format!(":{}", shared::config::SERVER_PORT)).to_string();
         Self {
             state: ServerState::Disconnected,
-            server: String::new(),
+            server: name,
+            auth: server.auth.clone(),
             connected: 0,
-            local: String::new(),
+            local: server.local.clone(),
             error: None,
             edit_local: None,
         }
@@ -332,10 +357,7 @@ impl ServerPanel {
                         }
                         ServerState::Disconnected => {
                             self.state = ServerState::Connecting;
-                            let server = Server {
-                                server: self.server.clone(),
-                                local: self.local.clone(),
-                            };
+                            let server = Server::from(&self.clone());
                             tx.send(GuiTriggeredEvent::Connect(server))
                             .expect("failed to send disconnect event");
                         }

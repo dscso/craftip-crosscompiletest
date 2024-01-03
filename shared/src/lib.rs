@@ -7,3 +7,5 @@ pub mod proxy;
 pub mod socket_packet;
 mod test;
 mod util;
+pub mod crypto;
+pub mod config;

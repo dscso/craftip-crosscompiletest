@@ -1,8 +1,6 @@
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedReceiver;
-use tokio::time::sleep;
 
 use crate::client::{Client, ControlTx, Stats};
 use crate::gui::gui_channel::GuiTriggeredEvent;
@@ -20,45 +18,6 @@ impl Controller {
     }
 
     pub async fn update(&mut self) {
-        let servers = vec![
-            ServerPanel {
-                state: ServerState::Disconnected,
-                server: "myserver.craftip.net".to_string(),
-                connected: 0,
-                local: "25564".to_string(),
-                error: None,
-                edit_local: None
-            },
-            ServerPanel {
-                state: ServerState::Disconnected,
-                server: "myserver2.craftip.net".to_string(),
-                connected: 0,
-                local: "25564".to_string(),
-                error: None,
-                edit_local: None
-            },
-            ServerPanel {
-                state: ServerState::Disconnected,
-                server: "myserver3.craftip.net".to_string(),
-                connected: 0,
-                local: "25565".to_string(),
-                error: None,
-                edit_local: None
-            },
-            ServerPanel {
-                state: ServerState::Disconnected,
-                server: "hi".to_string(),
-                connected: 0,
-                local: "localhost:25564".to_string(),
-                error: None,
-                edit_local: None
-            },
-        ];
-        sleep(Duration::from_secs(2)).await;
-        self.state.lock().unwrap().modify(|state| {
-            state.servers = Some(servers);
-        });
-
         let mut control_tx: Option<ControlTx> = None;
         let (stats_tx, mut stats_rx) = mpsc::unbounded_channel();
         loop {
