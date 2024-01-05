@@ -1,3 +1,4 @@
+use crate::config;
 use ring::rand::SecureRandom;
 use ring::signature::KeyPair;
 use ring::{digest, rand, signature};
@@ -96,6 +97,9 @@ impl ServerPublicKey {
         println!("checksum: {:?}", checksum);
         let checksum = base_x::encode(BASE36_ENCODER_STRING, checksum.as_ref());
         checksum[0..HOSTNAME_LENGTH].to_string()
+    }
+    pub fn get_hostname(&self) -> String {
+        format!("{}{}", self.get_host(), config::KEY_SERVER_SUFFIX)
     }
     pub fn create_challange(&self) -> ChallengeDataType {
         let rng = rand::SystemRandom::new();

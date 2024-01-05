@@ -1,10 +1,13 @@
 use std::io::Write;
 use std::mem::size_of;
+use std::net::SocketAddr;
 
+use crate::addressing::Tx;
 use crate::crypto::{ChallengeDataType, SignatureDataType};
 use bytes::{Buf, BytesMut};
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::cursor::{CustomCursor, CustomCursorMethods};
 use crate::datatypes::PacketError;
@@ -136,8 +139,10 @@ impl SocketPacket {
 /// Custom packet type for tokio channels to be able to close the client socket by the proxy
 /// uses Packet type as a generic type
 /// or Close to close the socket
-#[derive(Debug, PartialEq)]
-pub enum ChannelMessage<T> {
-    Packet(T),
+#[derive(Debug)]
+pub enum ClientToProxy {
+    Packet(SocketAddr, MinecraftDataPacket),
+    AddMinecraftClient(SocketAddr, UnboundedSender<MinecraftDataPacket>),
+    RemoveMinecraftClient(SocketAddr),
     Close,
 }

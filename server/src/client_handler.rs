@@ -3,31 +3,30 @@ use std::sync::Arc;
 
 use futures::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
+use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::{mpsc, Mutex};
 use tokio_util::codec::Framed;
 
 use crate::proxy_handler::ProxyClient;
-use shared::addressing::{Distributor, DistributorError, Rx};
+use shared::addressing::{Distributor, DistributorError, Register, Rx, Tx};
 use shared::distributor_error;
-use shared::minecraft::MinecraftHelloPacket;
+use shared::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
 use shared::packet_codec::PacketCodec;
 use shared::proxy::{ProxyClientDisconnectPacket, ProxyClientJoinPacket, ProxyDataPacket};
-use shared::socket_packet::{ChannelMessage, SocketPacket};
+use shared::socket_packet::{ClientToProxy, SocketPacket};
 
 #[derive(Debug)]
 pub struct MCClient {
     frames: Framed<TcpStream, PacketCodec>,
-    rx: Rx,
-    distributor: Arc<Mutex<Distributor>>,
+    rx: UnboundedReceiver<MinecraftDataPacket>,
     addr: SocketAddr,
-    id: u16,
-    hostname: String,
+    proxy_tx: Tx,
 }
 
 impl MCClient {
     /// Create a new instance of `Peer`.
     async fn new(
-        distributor: Arc<Mutex<Distributor>>,
+        proxy_tx: Tx,
         frames: Framed<TcpStream, PacketCodec>,
         hello_packet: MinecraftHelloPacket,
     ) -> Result<Self, DistributorError> {
@@ -38,40 +37,28 @@ impl MCClient {
             .map_err(distributor_error!("could not get peer address"))?;
         let hostname = hello_packet.hostname.clone();
         let (tx, rx) = mpsc::unbounded_channel();
-
-        let id = distributor.lock().await.add_client(&addr, &hostname, tx)?;
-
-        tracing::info!("added client with id: {}", id);
-
-        // telling proxy client that there is a new client
-
-        let client_join_packet = ProxyClientJoinPacket::new(id);
-        if let Err(err) = distributor
-            .lock()
-            .await
-            .send_to_server(&hostname, SocketPacket::from(client_join_packet))
-        {
-            // this should never happen
-            distributor.lock().await.remove_client(&addr)?;
-            return Err(err);
-        }
-
-        let mut packet = ProxyDataPacket::from_mc_hello_packet(&hello_packet, id);
-        packet.client_id = id;
-        let packet = SocketPacket::ProxyData(packet);
-        if let Err(err) = distributor.lock().await.send_to_server(&hostname, packet) {
-            // this should never happen
-            distributor.lock().await.remove_client(&addr)?;
-            return Err(err);
-        }
+        tracing::info!("sending client tx to proxy client {}", hostname);
+        proxy_tx
+            .send(ClientToProxy::AddMinecraftClient(addr, tx))
+            .map_err(|_| {
+                DistributorError::UnknownError("could not add minecraft client".to_string())
+            })?;
+        proxy_tx
+            .send(ClientToProxy::Packet(
+                addr,
+                MinecraftDataPacket {
+                    data: hello_packet.data,
+                },
+            ))
+            .map_err(|_| {
+                DistributorError::UnknownError("could not add minecraft client".to_string())
+            })?;
 
         Ok(MCClient {
             frames,
             rx,
-            distributor,
+            proxy_tx,
             addr,
-            id,
-            hostname: hello_packet.hostname.to_string(),
         })
     }
     /// HANDLE MC CLIENT
@@ -80,18 +67,15 @@ impl MCClient {
             tokio::select! {
                 res = self.rx.recv() => {
                     match res {
-                        Some(ChannelMessage::Packet(pkg)) => {
-                            self.frames.send(pkg).await.map_err(distributor_error!("could not send packet"))?;
+                        Some(pkg) => {
+                            self.frames.send(SocketPacket::from(pkg)).await.map_err(distributor_error!("could not send packet"))?;
                         }
                         _ => break,
                     }
                 }
                 result = self.frames.next() => match result {
                     Some(Ok(SocketPacket::MCData(packet))) => {
-                        let packet = SocketPacket::from(ProxyDataPacket::from_mc_packet(packet, self.id));
-                        self.distributor.lock()
-                            .await
-                            .send_to_server(&self.hostname, packet)?
+                        self.proxy_tx.send(ClientToProxy::Packet(self.addr, packet)).map_err(distributor_error!("could not send packet"))?;
                     }
                     // An error occurred.
                     Some(Err(e)) => {
@@ -110,19 +94,9 @@ impl MCClient {
 
     pub async fn close_connection(&mut self) -> Result<(), DistributorError> {
         tracing::info!("removing Minecraft client {} from state", self.addr);
-        let packet = SocketPacket::from(ProxyClientDisconnectPacket::new(self.id));
-        if let Err(err) = self
-            .distributor
-            .lock()
-            .await
-            .send_to_server(&self.hostname, packet)
-        {
-            tracing::debug!("could not send disconnect packet to proxy {}", err);
-        }
-
-        if let Err(e) = self.distributor.lock().await.remove_client(&self.addr) {
-            tracing::debug!("Error while removing mc client {}", e);
-        }
+        self.proxy_tx
+            .send(ClientToProxy::RemoveMinecraftClient(self.addr))
+            .map_err(distributor_error!("error closing connection"))?;
         Ok(())
     }
 }
@@ -133,7 +107,7 @@ impl MCClient {
 /// encapsulates/decapsulates the packets
 pub async fn process_socket_connection(
     socket: TcpStream,
-    distributor: Arc<Mutex<Distributor>>,
+    register: Arc<Mutex<Register>>,
 ) -> Result<(), DistributorError> {
     let mut frames = Framed::new(socket, PacketCodec::new(1024 * 8));
     // In a loop, read data from the socket and write the data back.
@@ -144,8 +118,13 @@ pub async fn process_socket_connection(
 
     match packet {
         SocketPacket::MCHello(packet) => {
-            let mut client = MCClient::new(distributor.clone(), frames, packet.clone()).await?;
-            tracing::info!("distributor: {}", distributor.lock().await);
+            let proxy_tx = register.lock().await.servers.get(&packet.hostname).cloned();
+            println!("proxy tx HAS TO ?BE TRUE! {:?}", proxy_tx.is_some());
+            let proxy_tx = proxy_tx.ok_or(DistributorError::UnknownError(format!(
+                "could not find proxy client for {}",
+                packet.hostname
+            )))?;
+            let mut client = MCClient::new(proxy_tx.clone(), frames, packet).await?;
 
             let response = client.handle().await;
             client.close_connection().await?;
@@ -160,8 +139,8 @@ pub async fn process_socket_connection(
                     .peer_addr()
                     .map_err(distributor_error!("could not get peer addr"))?
             );
-            let mut client = match ProxyClient::new(distributor.clone(), &mut frames, packet).await
-            {
+            let mut client = ProxyClient::new(register.clone(), &packet.hostname);
+            match client.authenticate(&mut frames, &packet).await {
                 Ok(client) => client,
                 Err(e) => {
                     tracing::warn!("could not add proxy client: {}", e);
@@ -174,6 +153,7 @@ pub async fn process_socket_connection(
 
             let response = client.handle(&mut frames).await;
             client.close_connection().await;
+            println!("client closed connection {:?}", response);
             response?;
         }
         _ => {

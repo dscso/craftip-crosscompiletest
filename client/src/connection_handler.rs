@@ -1,18 +1,17 @@
 use anyhow::{Context, Result};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
-use shared::addressing::Tx;
 use shared::proxy::{ProxyClientDisconnectPacket, ProxyDataPacket};
-use shared::socket_packet::{ChannelMessage, SocketPacket};
+use shared::socket_packet::SocketPacket;
 
 use crate::client::ClientTx;
-
+pub type Tx = UnboundedSender<Option<SocketPacket>>;
 pub struct ClientConnection {
     mc_server: String,
     client_id: u16,
-    client_rx: UnboundedReceiver<ChannelMessage<Vec<u8>>>,
+    client_rx: UnboundedReceiver<Option<Vec<u8>>>,
     proxy_tx: Tx,
 }
 
@@ -41,13 +40,13 @@ impl ClientConnection {
                 Some(pkg) = self.client_rx.recv() => {
                     //tracing::info!("Sending packet to client: {:?}", pkg);
                     match pkg {
-                        ChannelMessage::Packet(data) => {
+                        Some(data) => {
                             if let Err(err) = mc_server.write_all(&data).await {
                                 tracing::error!("write_all failed: {}", err);
                                 break;
                             }
                         }
-                        ChannelMessage::Close => {
+                        None => {
                             break;
                         }
                     }
@@ -66,9 +65,9 @@ impl ClientConnection {
                     }
                     tracing::debug!("recv pkg from mc srv len: {}", n);
                     // encapsulate in ProxyDataPacket
-                    let packet = SocketPacket::from(ProxyDataPacket::new(buf[0..n].to_vec(), n, self.client_id));
+                    let packet = SocketPacket::from(ProxyDataPacket::new(buf[0..n].to_vec(), self.client_id));
 
-                    if let Err(e) = self.proxy_tx.send(ChannelMessage::Packet(packet)) {
+                    if let Err(e) = self.proxy_tx.send(Some(packet)) {
                         tracing::error!("tx send failed: {}", e);
                         break;
                     }
@@ -83,7 +82,7 @@ impl ClientConnection {
     pub async fn close(&self) {
         let disconnect_pkg = SocketPacket::from(ProxyClientDisconnectPacket::new(self.client_id));
         // if this fails, channel is already closed. Therefore not important
-        let _ = self.proxy_tx.send(ChannelMessage::Packet(disconnect_pkg));
+        let _ = self.proxy_tx.send(Some(disconnect_pkg));
     }
 }
 

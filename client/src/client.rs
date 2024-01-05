@@ -14,7 +14,7 @@ use tokio_util::codec::Framed;
 
 use shared::packet_codec::{PacketCodec, PacketCodecError};
 use shared::proxy::{ProxyAuthenticator, ProxyHelloPacket};
-use shared::socket_packet::{ChannelMessage, SocketPacket};
+use shared::socket_packet::SocketPacket;
 
 use crate::connection_handler::ClientConnection;
 use crate::gui::gui_channel::Server;
@@ -52,11 +52,11 @@ pub enum ClientError {
     #[error("Other error: {0}")]
     Other(#[from] anyhow::Error),
 }
-pub type Tx = mpsc::UnboundedSender<ChannelMessage<SocketPacket>>;
-pub type Rx = mpsc::UnboundedReceiver<ChannelMessage<SocketPacket>>;
+pub type Tx = mpsc::UnboundedSender<Option<SocketPacket>>;
+pub type Rx = mpsc::UnboundedReceiver<Option<SocketPacket>>;
 
-pub type ClientTx = mpsc::UnboundedSender<ChannelMessage<Vec<u8>>>;
-pub type ClientRx = mpsc::UnboundedReceiver<ChannelMessage<Vec<u8>>>;
+pub type ClientTx = mpsc::UnboundedSender<Option<Vec<u8>>>;
+pub type ClientRx = mpsc::UnboundedReceiver<Option<Vec<u8>>>;
 
 pub type ControlTx = mpsc::UnboundedSender<Control>;
 pub type ControlRx = mpsc::UnboundedReceiver<Control>;
@@ -73,7 +73,7 @@ pub struct Client {
 }
 
 pub struct Shared {
-    connections: HashMap<u16, mpsc::UnboundedSender<ChannelMessage<Vec<u8>>>>,
+    connections: HashMap<u16, mpsc::UnboundedSender<Option<Vec<u8>>>>,
     stats_tx: Option<StatsTx>,
 }
 
@@ -88,7 +88,7 @@ impl Shared {
     pub fn set_stats_tx(&mut self, tx: StatsTx) {
         self.stats_tx = Some(tx);
     }
-    pub fn add_connection(&mut self, id: u16, tx: mpsc::UnboundedSender<ChannelMessage<Vec<u8>>>) {
+    pub fn add_connection(&mut self, id: u16, tx: mpsc::UnboundedSender<Option<Vec<u8>>>) {
         self.connections.insert(id, tx);
         if let Some(tx) = &self.stats_tx {
             tx.send(Stats::ClientsConnected(self.connections.len() as u16))
@@ -102,7 +102,7 @@ impl Shared {
                 .unwrap();
         }
     }
-    pub fn send_to(&mut self, id: u16, msg: ChannelMessage<Vec<u8>>) -> Result<()> {
+    pub fn send_to(&mut self, id: u16, msg: Option<Vec<u8>>) -> Result<()> {
         let channel = self
             .connections
             .get_mut(&id)
@@ -212,10 +212,10 @@ impl Client {
                 Some(pkg) = to_proxy_rx.recv() => {
                     //tracing::info!("Sending packet to client: {:?}", pkg);
                     match pkg {
-                        ChannelMessage::Packet(pkg) => {
+                        Some(pkg) => {
                             proxy.send(pkg).await?;
                         }
-                        ChannelMessage::Close => bail!("all clients dropped")
+                        None => bail!("all clients dropped")
                     }
                 }
                 // receive proxy packets
@@ -238,11 +238,11 @@ impl Client {
                                     });
                                 }
                                 SocketPacket::ProxyData(packet) => {
-                                    self.state.send_to(packet.client_id, ChannelMessage::Packet(packet.data.to_vec()))?;
+                                    self.state.send_to(packet.client_id, Some(packet.data.to_vec()))?;
                                 }
                                 SocketPacket::ProxyDisconnect(packet) => {
                                     // this can fail if the client is already disconnected
-                                    let _ = self.state.send_to(packet.client_id, ChannelMessage::Close);
+                                    let _ = self.state.send_to(packet.client_id, None);
                                     self.state.remove_connection(packet.client_id);
                                 }
                                 SocketPacket::ProxyPong(ping) => {

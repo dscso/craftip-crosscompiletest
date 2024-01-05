@@ -5,7 +5,7 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
-use shared::addressing::{Distributor, DistributorError};
+use shared::addressing::{Distributor, DistributorError, Register};
 
 mod client_handler;
 pub mod proxy_handler;
@@ -28,13 +28,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mc_listener = TcpListener::bind(&addr).await?;
     tracing::info!("server running on {:?}", mc_listener.local_addr()?);
-
-    let distributor = Arc::new(Mutex::new(Distributor::default()));
+    let register = Arc::new(Mutex::new(Register::new()));
     loop {
         let (socket, _addr) = mc_listener.accept().await?;
-        let distributor = Arc::clone(&distributor);
+        let register = Arc::clone(&register);
         tokio::spawn(async move {
-            match client_handler::process_socket_connection(socket, distributor).await {
+            match client_handler::process_socket_connection(socket, register).await {
                 Ok(_) => tracing::info!("client disconnected"),
                 Err(DistributorError::UnknownError(err)) => {
                     tracing::error!("client error: {}", err)

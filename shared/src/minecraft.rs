@@ -24,23 +24,18 @@ pub struct MinecraftHelloPacket {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct MinecraftDataPacket {
-    pub length: usize,
     pub data: Vec<u8>,
 }
 
 impl From<ProxyDataPacket> for MinecraftDataPacket {
     fn from(packet: ProxyDataPacket) -> Self {
-        MinecraftDataPacket {
-            length: packet.data.len(),
-            data: packet.data,
-        }
+        MinecraftDataPacket { data: packet.data }
     }
 }
 
 impl MinecraftDataPacket {
     pub fn new(buf: &mut BytesMut) -> Result<MinecraftDataPacket, PacketError> {
         Ok(MinecraftDataPacket {
-            length: buf.len(),
             data: buf.split_to(buf.len()).to_vec(),
         })
     }
