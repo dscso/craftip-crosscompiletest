@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -24,6 +25,39 @@ pub struct MinecraftClient {
     tx: UnboundedSender<MinecraftDataPacket>,
     id: u16,
 }
+
+#[derive(Debug, Default)]
+pub struct Distribiutor {
+    clients_addr: HashMap<SocketAddr, MinecraftClient>,
+    clients_id: HashMap<u16, SocketAddr>,
+}
+
+impl Distribiutor {
+    fn insert(&mut self, addr: SocketAddr, client: MinecraftClient) {
+        self.clients_id.insert(client.id, addr);
+        self.clients_addr.insert(addr, client);
+    }
+    fn remove_by_addr(&mut self, addr: &SocketAddr) {
+        if let Some(client) = self.clients_addr.get(addr) {
+            self.clients_id.remove(&client.id);
+        }
+        self.clients_addr.remove(addr);
+    }
+    fn remove_by_id(&mut self, id: u16) {
+        if let Some(addr) = self.clients_id.get(&id) {
+            self.clients_addr.remove(addr);
+        }
+        self.clients_id.remove(&id);
+    }
+    fn get_by_addr(&self, addr: &SocketAddr) -> Option<&MinecraftClient> {
+        return self.clients_addr.get(addr)
+    }
+    fn get_by_id(&self, id: u16) -> Option<&MinecraftClient>{
+        return self.clients_id.get(&id).and_then(|addr| self.clients_addr.get(addr))
+    }
+}
+
+
 #[derive(Debug)]
 pub struct ProxyClient {
     register: Arc<Mutex<Register>>,
@@ -43,8 +77,7 @@ impl ProxyClient {
         framed: &mut Framed<TcpStream, PacketCodec>,
     ) -> Result<(), DistributorError> {
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let mut minecraft_clients_addr = HashMap::new();
-        let mut minecraft_clients_id = HashMap::new();
+        let mut distributor = Distribiutor::default();
 
         let mut current_clientid = 0;
         self.register
@@ -74,29 +107,25 @@ impl ProxyClient {
                         },
                         ClientToProxy::AddMinecraftClient(addr, tx) => {
                             framed.send(SocketPacket::from(ProxyClientJoinPacket { client_id: current_clientid })).await?;
-                            minecraft_clients_addr.insert(addr, MinecraftClient {
-                                tx,
-                                id: current_clientid,
-                            });
-                            minecraft_clients_id.insert(current_clientid, addr);
+                            distributor.insert(addr, MinecraftClient { tx, id: current_clientid });
                             current_clientid += 1;
-                            tracing::info!("Added minecraft client: {:?} {:?}", addr, minecraft_clients_addr);
+                            tracing::info!("Added minecraft client: {:?} {:?}", addr, distributor);
                         },
                         ClientToProxy::Packet(addr, pkg) => {
-                            let mcserver = minecraft_clients_addr.get(&addr).unwrap().clone();
-                            let client_id = mcserver.id;
-                            let pkg = SocketPacket::ProxyData(ProxyDataPacket {
-                                client_id,
-                                data: pkg.data,
-                            });
-                            framed.send(pkg).await?;
+                            if let Some(client) = distributor.get_by_addr(&addr) {
+                                let pkg = SocketPacket::from(ProxyDataPacket::new(pkg.data, client.id));
+                                framed.send(pkg).await?;
+                            } else {
+                                break
+                            }
                         },
                         ClientToProxy::RemoveMinecraftClient(addr) => {
-                            if let Some(mc_server) = minecraft_clients_addr.get(&addr).cloned() {
-                                minecraft_clients_addr.remove(&addr);
-                                minecraft_clients_id.remove(&mc_server.id);
-                                framed.send(SocketPacket::from(ProxyClientDisconnectPacket { client_id: mc_server.id })).await?;
+                            if let Some(client) = distributor.get_by_addr(&addr) {
+                                framed.send(SocketPacket::from(ProxyClientDisconnectPacket { client_id: client.id })).await?;
+                            } else {
+                                break
                             }
+                            distributor.remove_by_addr(&addr);
                         }
                         _ => {}
                     }
@@ -108,15 +137,12 @@ impl ProxyClient {
                         Ok(Some(Ok(packet))) => {
                             match packet {
                                 SocketPacket::ProxyDisconnect(packet) => {
-                                    if let Some(addr) = minecraft_clients_id.get(&packet.client_id) {
-                                         minecraft_clients_addr.remove(&addr);
-                                         minecraft_clients_id.remove(&packet.client_id);
-                                    }
+
                                 }
                                 SocketPacket::ProxyData(packet) => {
-                                    if let Some(addr) = minecraft_clients_id.get(&packet.client_id) {
+                                    if let Some(client) = distributor.get_by_id(packet.client_id) {
                                         let mc_packet = MinecraftDataPacket::from(packet);
-                                        minecraft_clients_addr.get(&addr).unwrap().tx.send(mc_packet).map_err(distributor_error!("could not send packet"))?;
+                                        client.tx.send(mc_packet).map_err(distributor_error!("could not send packet"))?;
                                     } else {
                                         tracing::error!("already disconnected! Packet will not be delivered {:?}", packet);
                                     }

@@ -80,6 +80,7 @@ impl MCClient {
                     // An error occurred.
                     Some(Err(e)) => {
                         tracing::error!("Error while receiving: {:?}", e);
+                        break;
                     }
                     // The stream has been exhausted.
                     None => break,
