@@ -4,9 +4,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 
-use crate::client::{ClientToProxy, ClientToProxyTx, ProxyToClientRx, ProxyToClientTx};
-use shared::proxy::ProxyClientDisconnectPacket;
-use shared::socket_packet::{DisconnectReason, SocketPacket};
+use shared::socket_packet::SocketPacket;
+use crate::structs::{ClientToProxy, ClientToProxyTx, ProxyToClientRx, ProxyToClientTx};
 
 pub type Tx = UnboundedSender<Option<SocketPacket>>;
 pub struct ClientConnection {
@@ -88,7 +87,6 @@ impl ClientConnection {
     }
     /// Sends a disconnect packet to the proxy server
     pub async fn close(&self) {
-        let disconnect_pkg = SocketPacket::ProxyDisconnect(self.client_id);
         // if this fails, channel is already closed. Therefore not important
         let _ = self
             .proxy_tx

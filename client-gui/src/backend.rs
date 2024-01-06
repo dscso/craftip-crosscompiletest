@@ -2,9 +2,11 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedReceiver;
 
-use crate::client::{Client, ControlTx, Stats};
-use crate::gui::gui_channel::GuiTriggeredEvent;
-use crate::gui::gui_channel::ServerState;
+use client::client::{Client };
+use client::structs::{Control, Stats};
+use client::structs::ControlTx;
+use crate::gui_channel::GuiTriggeredEvent;
+use crate::gui_channel::ServerState;
 use crate::GuiState;
 
 pub struct Controller {
@@ -37,9 +39,6 @@ impl Controller {
                         }
                         Stats::Connected => {}
                         Stats::Ping(_ping) => {}
-                        _ => {
-                            tracing::error!("Unhandled stats: {:?}", result);
-                        }
                     }
                 }
                 event = self.gui_rx.recv() => {
@@ -94,11 +93,8 @@ impl Controller {
                         GuiTriggeredEvent::Disconnect() => {
                             // sleep async 1 sec
                             if let Some(control_tx) = &control_tx {
-                                control_tx.send(crate::client::Control::Disconnect).unwrap();
+                                control_tx.send(Control::Disconnect).unwrap();
                             }
-                        }
-                        _ => {
-                            println!("Unhandled event: {:?}", event);
                         }
                     }
                 }

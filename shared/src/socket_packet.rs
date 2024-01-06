@@ -13,7 +13,7 @@ use crate::datatypes::PacketError;
 use crate::datatypes::Protocol;
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
 use crate::proxy::{
-    ProxyClientDisconnectPacket, ProxyClientJoinPacket, ProxyConnectedResponse, ProxyDataPacket,
+    ProxyConnectedResponse, ProxyDataPacket,
     ProxyHelloPacket,
 };
 

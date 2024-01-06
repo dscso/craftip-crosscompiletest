@@ -3,76 +3,23 @@ use std::time::Duration;
 use std::time::SystemTime;
 
 use anyhow::{bail, Context, Result};
-use futures::SinkExt;
+use futures::{SinkExt};
 use shared::config::PROTOCOL_VERSION;
-use shared::minecraft::MinecraftDataPacket;
-use thiserror::Error;
-use tokio::io;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::time::{sleep, timeout};
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 
-use shared::packet_codec::{PacketCodec, PacketCodecError};
+use shared::packet_codec::{PacketCodec};
 use shared::proxy::{
-    ProxyAuthenticator, ProxyClientDisconnectPacket, ProxyDataPacket, ProxyHelloPacket,
+    ProxyAuthenticator, ProxyDataPacket, ProxyHelloPacket,
 };
-use shared::socket_packet::{DisconnectReason, SocketPacket};
+use shared::socket_packet::{SocketPacket};
 
 use crate::connection_handler::ClientConnection;
-use crate::gui::gui_channel::Server;
-use crate::ServerAuthentication;
+use crate::structs::{ClientError, ClientToProxy, Control, ControlRx, ProxyToClient, ProxyToClientTx, Server, ServerAuthentication, Stats, StatsTx};
 
-#[derive(Debug)]
-pub enum Stats {
-    Connected,
-    ClientsConnected(u16),
-    Ping(u16),
-}
-
-#[derive(Debug)]
-pub enum Control {
-    Disconnect,
-}
-
-#[derive(Error, Debug)]
-pub enum ClientError {
-    #[error("Io Error: {0}")]
-    Io(#[from] io::Error),
-    #[error("protocol error: {0}")]
-    ProtocolError(#[from] PacketCodecError),
-    #[error("Proxy closed the connection")]
-    ProxyClosedConnection,
-    #[error("User closed the connection")]
-    UserClosedConnection,
-    #[error("Timeout")]
-    Timeout,
-    #[error("Proxy error: {0}")]
-    ProxyError(String),
-    #[error("Minecraft server error. Is the server running?")]
-    MinecraftServerNotFound,
-    #[error("Unexpected packet: {0}")]
-    UnexpectedPacket(String),
-    #[error("Other error: {0}")]
-    Other(#[from] anyhow::Error),
-}
-
-pub enum ClientToProxy {
-    Packet(u16, MinecraftDataPacket),
-    RemoveMinecraftClient(u16),
-    Death(String),
-}
-pub type ClientToProxyRx = mpsc::UnboundedReceiver<ClientToProxy>;
-pub type ClientToProxyTx = mpsc::UnboundedSender<ClientToProxy>;
-pub type ProxyToClient = MinecraftDataPacket;
-pub type ProxyToClientRx = mpsc::UnboundedReceiver<ProxyToClient>;
-pub type ProxyToClientTx = mpsc::UnboundedSender<ProxyToClient>;
-pub type ControlTx = mpsc::UnboundedSender<Control>;
-pub type ControlRx = mpsc::UnboundedReceiver<Control>;
-
-pub type StatsTx = mpsc::UnboundedSender<Stats>;
-pub type StatsRx = mpsc::UnboundedReceiver<Stats>;
 
 pub struct Client {
     state: State,
