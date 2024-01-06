@@ -18,6 +18,7 @@ use crate::proxy::{
 };
 
 pub type PingPacket = u16;
+pub type ClientID = u16;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub enum SocketPacket {
@@ -29,13 +30,20 @@ pub enum SocketPacket {
     #[serde(with = "BigArray")]
     ProxyAuthResponse(SignatureDataType),
     ProxyHelloResponse(ProxyConnectedResponse),
-    ProxyJoin(ProxyClientJoinPacket),
-    ProxyDisconnect(ProxyClientDisconnectPacket),
+    ProxyJoin(ClientID),
+    ProxyDisconnect(ClientID),
+    ProxyDisconnectAck(ClientID),
     ProxyError(String),
+    // todo change packet type
     ProxyData(ProxyDataPacket),
     ProxyPing(PingPacket),
     ProxyPong(PingPacket),
     Unknown,
+}
+
+pub enum DisconnectReason {
+    Disconnected,
+    SocketClosed
 }
 
 impl From<MinecraftHelloPacket> for SocketPacket {
@@ -58,18 +66,6 @@ impl From<ProxyHelloPacket> for SocketPacket {
 impl From<ProxyConnectedResponse> for SocketPacket {
     fn from(packet: ProxyConnectedResponse) -> Self {
         SocketPacket::ProxyHelloResponse(packet)
-    }
-}
-
-impl From<ProxyClientJoinPacket> for SocketPacket {
-    fn from(packet: ProxyClientJoinPacket) -> Self {
-        SocketPacket::ProxyJoin(packet)
-    }
-}
-
-impl From<ProxyClientDisconnectPacket> for SocketPacket {
-    fn from(packet: ProxyClientDisconnectPacket) -> Self {
-        SocketPacket::ProxyDisconnect(packet)
     }
 }
 

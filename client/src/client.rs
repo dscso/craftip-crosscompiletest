@@ -18,7 +18,7 @@ use shared::packet_codec::{PacketCodec, PacketCodecError};
 use shared::proxy::{
     ProxyAuthenticator, ProxyClientDisconnectPacket, ProxyDataPacket, ProxyHelloPacket,
 };
-use shared::socket_packet::SocketPacket;
+use shared::socket_packet::{DisconnectReason, SocketPacket};
 
 use crate::connection_handler::ClientConnection;
 use crate::gui::gui_channel::Server;
@@ -65,7 +65,7 @@ pub enum ClientToProxy {
 }
 pub type ClientToProxyRx = mpsc::UnboundedReceiver<ClientToProxy>;
 pub type ClientToProxyTx = mpsc::UnboundedSender<ClientToProxy>;
-pub type ProxyToClient = Option<MinecraftDataPacket>;
+pub type ProxyToClient = MinecraftDataPacket;
 pub type ProxyToClientRx = mpsc::UnboundedReceiver<ProxyToClient>;
 pub type ProxyToClientTx = mpsc::UnboundedSender<ProxyToClient>;
 pub type ControlTx = mpsc::UnboundedSender<Control>;
@@ -215,7 +215,8 @@ impl Client {
                             proxy.send(SocketPacket::from(ProxyDataPacket::new(pkg, id))).await?;
                         },
                         ClientToProxy::RemoveMinecraftClient(id) => {
-                            proxy.send(SocketPacket::from(ProxyClientDisconnectPacket::new(id))).await?;
+                            proxy.send(SocketPacket::ProxyDisconnect(id)).await?;
+                            self.state.remove_connection(id);
                         },
                         ClientToProxy::Death(msg) => {
                             bail!(msg);
@@ -227,26 +228,23 @@ impl Client {
                     match result {
                         Some(Ok(msg)) => {
                             match msg {
-                                SocketPacket::ProxyJoin(packet) => {
-                                    let (mut client_connection, client_tx) = ClientConnection::new(to_proxy_tx.clone(), self.server.local.clone(), packet.client_id).await;
-                                    self.state.add_connection(packet.client_id, client_tx);
+                                SocketPacket::ProxyJoin(client_id) => {
+                                    let (mut client_connection, client_tx) = ClientConnection::new(to_proxy_tx.clone(), self.server.local.clone(), client_id).await;
+                                    self.state.add_connection(client_id, client_tx);
                                     tokio::spawn(async move {
-                                        client_connection.handle_client().await.unwrap_or_else(|e| {
+                                        if let Err(e) = client_connection.handle_client().await {
                                             tracing::error!("An Error occurred in the handle_client function: {}", e);
                                             // sometimes handle_client closes after gui, errors can occur
                                             client_connection.set_death(e.to_string());
-                                        });
-
-                                        client_connection.close().await;
+                                        }
                                     });
                                 }
                                 SocketPacket::ProxyData(packet) => {
-                                    self.state.send_to(packet.client_id, Some(packet.packet))?;
+                                    self.state.send_to(packet.client_id, packet.packet)?;
                                 }
-                                SocketPacket::ProxyDisconnect(packet) => {
+                                SocketPacket::ProxyDisconnect(client_id) => {
                                     // this can fail if the client is already disconnected
-                                    let _ = self.state.send_to(packet.client_id, None);
-                                    self.state.remove_connection(packet.client_id);
+                                    self.state.remove_connection(client_id);
                                 }
                                 SocketPacket::ProxyPong(ping) => {
                                     let time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as u16;
@@ -275,6 +273,6 @@ impl Client {
 
 impl Drop for Client {
     fn drop(&mut self) {
-        tracing::info!("Client dropped");
+        tracing::info!("Proxy client dropped");
     }
 }

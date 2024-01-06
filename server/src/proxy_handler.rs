@@ -127,7 +127,7 @@ impl ProxyClient {
                         },
                         ClientToProxy::AddMinecraftClient(addr, tx) => {
                             let client = distributor.insert(addr, tx)?;
-                            framed.send(SocketPacket::from(ProxyClientJoinPacket { client_id: client.id })).await?;
+                            framed.send(SocketPacket::ProxyJoin(client.id)).await?;
                         },
                         ClientToProxy::Packet(addr, pkg) => {
                             // if client not found, close connection
@@ -137,8 +137,9 @@ impl ProxyClient {
                         },
                         ClientToProxy::RemoveMinecraftClient(addr) => {
                             if let Some(client) = distributor.get_by_addr(&addr) {
-                                framed.send(SocketPacket::from(ProxyClientDisconnectPacket { client_id: client.id })).await?;
+                                framed.send(SocketPacket::ProxyDisconnect(client.id)).await?;
                             }
+                            distributor.remove_by_addr(&addr);
                         }
                     }
                 }
@@ -149,8 +150,8 @@ impl ProxyClient {
                         Ok(Some(Ok(packet))) => {
                             match packet {
                                 // if mc server disconnects mc client
-                                SocketPacket::ProxyDisconnect(packet) => {
-                                    distributor.remove_by_id(packet.client_id);
+                                SocketPacket::ProxyDisconnect(client_id) => {
+                                    distributor.remove_by_id(client_id);
                                 }
                                 SocketPacket::ProxyData(packet) => {
                                     if let Some(client) = distributor.get_by_id(packet.client_id) {

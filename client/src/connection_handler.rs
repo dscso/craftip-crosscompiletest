@@ -6,7 +6,7 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 
 use crate::client::{ClientToProxy, ClientToProxyTx, ProxyToClientRx, ProxyToClientTx};
 use shared::proxy::ProxyClientDisconnectPacket;
-use shared::socket_packet::SocketPacket;
+use shared::socket_packet::{DisconnectReason, SocketPacket};
 
 pub type Tx = UnboundedSender<Option<SocketPacket>>;
 pub struct ClientConnection {
@@ -14,6 +14,7 @@ pub struct ClientConnection {
     client_id: u16,
     client_rx: ProxyToClientRx,
     proxy_tx: ClientToProxyTx,
+    pub need_for_close: bool,
 }
 
 impl ClientConnection {
@@ -29,6 +30,7 @@ impl ClientConnection {
                 client_id,
                 client_rx,
                 proxy_tx,
+                need_for_close: true,
             },
             client_tx,
         )
@@ -42,7 +44,7 @@ impl ClientConnection {
             .context(format!("could not connect to {}", &self.mc_server))?;
         loop {
             tokio::select! {
-                Some(pkg) = self.client_rx.recv() => {
+                pkg = self.client_rx.recv() => {
                     //tracing::info!("Sending packet to client: {:?}", pkg);
                     match pkg {
                         Some(packet) => {
@@ -52,7 +54,8 @@ impl ClientConnection {
                             }
                         }
                         None => {
-                            break;
+                            self.need_for_close = false;
+                            return Ok(())
                         }
                     }
                 }
@@ -66,7 +69,7 @@ impl ClientConnection {
                     };
                     if n == 0 {
                         tracing::info!("Minecraft server closed connection!");
-                        break; // server 2 has closed the connection
+                        break;
                     }
                     tracing::debug!("recv pkg from mc srv len: {}", n);
                     // encapsulate in ProxyDataPacket
@@ -80,12 +83,12 @@ impl ClientConnection {
             }
         }
         tracing::trace!("closing client connection");
-
+        self.need_for_close = true;
         Ok(())
     }
     /// Sends a disconnect packet to the proxy server
     pub async fn close(&self) {
-        let disconnect_pkg = SocketPacket::from(ProxyClientDisconnectPacket::new(self.client_id));
+        let disconnect_pkg = SocketPacket::ProxyDisconnect(self.client_id);
         // if this fails, channel is already closed. Therefore not important
         let _ = self
             .proxy_tx
@@ -99,5 +102,8 @@ impl ClientConnection {
 impl Drop for ClientConnection {
     fn drop(&mut self) {
         tracing::info!("dropping client connection {}", self.client_id);
+        if self.need_for_close {
+            let _ = self.proxy_tx.send(ClientToProxy::RemoveMinecraftClient(self.client_id));
+        }
     }
 }
