@@ -75,7 +75,10 @@ impl MCClient {
                 }
                 result = self.frames.next() => match result {
                     Some(Ok(SocketPacket::MCData(packet))) => {
-                        self.proxy_tx.send(ClientToProxy::Packet(self.addr, packet)).map_err(distributor_error!("could not send packet"))?;
+                        if let Err(e) = self.proxy_tx.send(ClientToProxy::Packet(self.addr, packet)) {
+                            tracing::error!("could not send to proxy distributor: {}", e);
+                            break;
+                        }
                     }
                     // An error occurred.
                     Some(Err(e)) => {

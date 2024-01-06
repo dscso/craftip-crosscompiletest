@@ -139,7 +139,6 @@ impl ProxyClient {
                             if let Some(client) = distributor.get_by_addr(&addr) {
                                 framed.send(SocketPacket::from(ProxyClientDisconnectPacket { client_id: client.id })).await?;
                             }
-                            distributor.remove_by_addr(&addr);
                         }
                     }
                 }
