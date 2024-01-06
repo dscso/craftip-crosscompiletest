@@ -5,6 +5,7 @@ use ring::{digest, rand, signature};
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
 use std::fmt;
+use thiserror::Error;
 
 const BASE36_ENCODER_STRING: &str = "0123456789abcdefghijklmnopqrstuvwxyz";
 const PREFIX: &str = "CraftIPServerHost";
@@ -89,23 +90,26 @@ impl TryFrom<&str> for ServerPublicKey {
         Ok(Self { key: result })
     }
 }
-
+#[derive(Debug, Error)]
+pub enum CryptoError {
+    #[error("Crypto failed for unknown reason")]
+    CryptoFailed
+}
 impl ServerPublicKey {
     pub fn get_host(&self) -> String {
         let checksum = &[PREFIX.as_bytes(), self.key.as_ref()].concat();
         let checksum = digest::digest(&digest::SHA256, checksum);
-        println!("checksum: {:?}", checksum);
         let checksum = base_x::encode(BASE36_ENCODER_STRING, checksum.as_ref());
         checksum[0..HOSTNAME_LENGTH].to_string()
     }
     pub fn get_hostname(&self) -> String {
         format!("{}{}", self.get_host(), config::KEY_SERVER_SUFFIX)
     }
-    pub fn create_challange(&self) -> ChallengeDataType {
+    pub fn create_challange(&self) -> Result<ChallengeDataType, CryptoError> {
         let rng = rand::SystemRandom::new();
         let mut result = [0u8; 64];
-        rng.fill(&mut result).unwrap();
-        result
+        rng.fill(&mut result).map_err(|e|CryptoError::CryptoFailed)?;
+        Ok(result)
     }
     pub fn verify(&self, data: &ChallengeDataType, signature: &SignatureDataType) -> bool {
         let data = create_challenge(data);

@@ -51,7 +51,7 @@ impl Controller {
                     match event {
                         GuiTriggeredEvent::Connect(server) => {
                             let mut server = server.clone();
-                            tracing::info!("Connecting to server: {:?}", server);
+                            tracing::info!("Connecting to server: {}", server.server);
                             if !server.local.contains(':') {
                                 server.server = format!("{}:{}", server.server, server.local);
                             }

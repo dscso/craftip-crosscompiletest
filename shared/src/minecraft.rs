@@ -29,7 +29,7 @@ pub struct MinecraftDataPacket {
 
 impl From<ProxyDataPacket> for MinecraftDataPacket {
     fn from(packet: ProxyDataPacket) -> Self {
-        MinecraftDataPacket { data: packet.data }
+        packet.packet
     }
 }
 

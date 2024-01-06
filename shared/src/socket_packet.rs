@@ -2,21 +2,17 @@ use std::io::Write;
 use std::mem::size_of;
 use std::net::SocketAddr;
 
-use crate::addressing::Tx;
 use crate::crypto::{ChallengeDataType, SignatureDataType};
 use bytes::{Buf, BytesMut};
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{UnboundedSender};
 
 use crate::cursor::{CustomCursor, CustomCursorMethods};
 use crate::datatypes::PacketError;
 use crate::datatypes::Protocol;
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
-use crate::proxy::{
-    ProxyAuthRequestPacket, ProxyAuthResponePacket, ProxyClientDisconnectPacket,
-    ProxyClientJoinPacket, ProxyConnectedResponse, ProxyDataPacket, ProxyHelloPacket,
-};
+use crate::proxy::{ProxyClientDisconnectPacket, ProxyClientJoinPacket, ProxyConnectedResponse, ProxyDataPacket, ProxyHelloPacket};
 
 pub type PingPacket = u16;
 

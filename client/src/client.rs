@@ -11,10 +11,12 @@ use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
+use shared::minecraft::MinecraftDataPacket;
 
 use shared::packet_codec::{PacketCodec, PacketCodecError};
-use shared::proxy::{ProxyAuthenticator, ProxyHelloPacket};
+use shared::proxy::{ProxyAuthenticator, ProxyClientDisconnectPacket, ProxyDataPacket, ProxyHelloPacket};
 use shared::socket_packet::SocketPacket;
+use shared::socket_packet::SocketPacket::ProxyDisconnect;
 
 use crate::connection_handler::ClientConnection;
 use crate::gui::gui_channel::Server;
@@ -52,12 +54,16 @@ pub enum ClientError {
     #[error("Other error: {0}")]
     Other(#[from] anyhow::Error),
 }
-pub type Tx = mpsc::UnboundedSender<Option<SocketPacket>>;
-pub type Rx = mpsc::UnboundedReceiver<Option<SocketPacket>>;
 
-pub type ClientTx = mpsc::UnboundedSender<Option<Vec<u8>>>;
-pub type ClientRx = mpsc::UnboundedReceiver<Option<Vec<u8>>>;
-
+pub enum ClientToProxy {
+    Packet(u16, MinecraftDataPacket),
+    RemoveMinecraftClient(u16),
+}
+pub type ClientToProxyRx = mpsc::UnboundedReceiver<ClientToProxy>;
+pub type ClientToProxyTx = mpsc::UnboundedSender<ClientToProxy>;
+pub type ProxyToClient = Option<MinecraftDataPacket>;
+pub type ProxyToClientRx = mpsc::UnboundedReceiver<ProxyToClient>;
+pub type ProxyToClientTx = mpsc::UnboundedSender<ProxyToClient>;
 pub type ControlTx = mpsc::UnboundedSender<Control>;
 pub type ControlRx = mpsc::UnboundedReceiver<Control>;
 
@@ -65,22 +71,22 @@ pub type StatsTx = mpsc::UnboundedSender<Stats>;
 pub type StatsRx = mpsc::UnboundedReceiver<Stats>;
 
 pub struct Client {
-    state: Shared,
+    state: State,
     stats_tx: StatsTx,
     proxy: Option<Framed<TcpStream, PacketCodec>>,
     control_rx: ControlRx,
     server: Server,
 }
 
-pub struct Shared {
-    connections: HashMap<u16, mpsc::UnboundedSender<Option<Vec<u8>>>>,
-    stats_tx: Option<StatsTx>,
+pub struct State {
+    connections: HashMap<u16, mpsc::UnboundedSender<ProxyToClient>>,
+    stats_tx: Option<mpsc::UnboundedSender<Stats>>,
 }
 
-impl Shared {
+impl State {
     /// Create a new, empty, instance of `Shared`.
     pub fn new() -> Self {
-        Shared {
+        State {
             connections: HashMap::new(),
             stats_tx: None,
         }
@@ -88,7 +94,7 @@ impl Shared {
     pub fn set_stats_tx(&mut self, tx: StatsTx) {
         self.stats_tx = Some(tx);
     }
-    pub fn add_connection(&mut self, id: u16, tx: mpsc::UnboundedSender<Option<Vec<u8>>>) {
+    pub fn add_connection(&mut self, id: u16, tx: mpsc::UnboundedSender<ProxyToClient>) {
         self.connections.insert(id, tx);
         if let Some(tx) = &self.stats_tx {
             tx.send(Stats::ClientsConnected(self.connections.len() as u16))
@@ -102,7 +108,7 @@ impl Shared {
                 .unwrap();
         }
     }
-    pub fn send_to(&mut self, id: u16, msg: Option<Vec<u8>>) -> Result<()> {
+    pub fn send_to(&mut self, id: u16, msg: ProxyToClient) -> Result<()> {
         let channel = self
             .connections
             .get_mut(&id)
@@ -116,7 +122,7 @@ impl Shared {
 
 impl Client {
     pub async fn new(server: Server, stats_tx: StatsTx, mut control_rx: ControlRx) -> Self {
-        let mut state = Shared::new();
+        let mut state = State::new();
         state.set_stats_tx(stats_tx.clone());
         Client {
             server,
@@ -209,13 +215,15 @@ impl Client {
                     }
                 }
                 // send packets to proxy
-                Some(pkg) = to_proxy_rx.recv() => {
+               Some(pkg) = to_proxy_rx.recv() => {
                     //tracing::info!("Sending packet to client: {:?}", pkg);
                     match pkg {
-                        Some(pkg) => {
-                            proxy.send(pkg).await?;
+                        ClientToProxy::Packet(id, pkg) => {
+                            proxy.send(SocketPacket::from(ProxyDataPacket::new(pkg, id))).await?;
+                        },
+                        ClientToProxy::RemoveMinecraftClient(id) => {
+                            proxy.send(SocketPacket::from(ProxyClientDisconnectPacket{ client_id: id  })).await?;
                         }
-                        None => bail!("all clients dropped")
                     }
                 }
                 // receive proxy packets
@@ -238,7 +246,7 @@ impl Client {
                                     });
                                 }
                                 SocketPacket::ProxyData(packet) => {
-                                    self.state.send_to(packet.client_id, Some(packet.data.to_vec()))?;
+                                    self.state.send_to(packet.client_id, Some(packet.packet))?;
                                 }
                                 SocketPacket::ProxyDisconnect(packet) => {
                                     // this can fail if the client is already disconnected

@@ -10,8 +10,8 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::time::timeout;
 use tokio_util::codec::Framed;
 
-use shared::addressing::{DistributorError, Register, Tx};
-use shared::distributor_error;
+use shared::addressing::{DistributorError, Register};
+use shared::{config, distributor_error};
 use shared::minecraft::MinecraftDataPacket;
 use shared::packet_codec::PacketCodec;
 use shared::proxy::{
@@ -33,9 +33,24 @@ pub struct Distribiutor {
 }
 
 impl Distribiutor {
-    fn insert(&mut self, addr: SocketAddr, client: MinecraftClient) {
-        self.clients_id.insert(client.id, addr);
-        self.clients_addr.insert(addr, client);
+    fn insert(&mut self, addr: SocketAddr, tx: UnboundedSender<MinecraftDataPacket>) -> Result<MinecraftClient, DistributorError> {
+        let mut id = None;
+        let time = std::time::Instant::now();
+        for id_found in 0..=config::MAXIMUM_CLIENTS {
+            if !self.clients_id.contains_key(&id_found) {
+                id = Some(id_found);
+                break;
+            }
+        }
+        tracing::info!("finding id took {:?}", time.elapsed());
+        let id = id.ok_or(DistributorError::TooManyClients)?;
+        self.clients_id.insert(id, addr);
+        let client = MinecraftClient {
+            id,
+            tx
+        };
+        self.clients_addr.insert(addr, client.clone());
+        Ok(client)
     }
     fn remove_by_addr(&mut self, addr: &SocketAddr) {
         if let Some(client) = self.clients_addr.get(addr) {
@@ -79,7 +94,6 @@ impl ProxyClient {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let mut distributor = Distribiutor::default();
 
-        let mut current_clientid = 0;
         self.register
             .lock()
             .await
@@ -106,28 +120,21 @@ impl ProxyClient {
                             break
                         },
                         ClientToProxy::AddMinecraftClient(addr, tx) => {
-                            framed.send(SocketPacket::from(ProxyClientJoinPacket { client_id: current_clientid })).await?;
-                            distributor.insert(addr, MinecraftClient { tx, id: current_clientid });
-                            current_clientid += 1;
-                            tracing::info!("Added minecraft client: {:?} {:?}", addr, distributor);
+                            let client = distributor.insert(addr, tx)?;
+                            framed.send(SocketPacket::from(ProxyClientJoinPacket { client_id: client.id })).await?;
                         },
                         ClientToProxy::Packet(addr, pkg) => {
-                            if let Some(client) = distributor.get_by_addr(&addr) {
-                                let pkg = SocketPacket::from(ProxyDataPacket::new(pkg.data, client.id));
-                                framed.send(pkg).await?;
-                            } else {
-                                break
-                            }
+                            // if client not found, close connection
+                            let client = distributor.get_by_addr(&addr).ok_or_else(||DistributorError::WrongPacket)?;
+                            let pkg = SocketPacket::from(ProxyDataPacket::new(pkg, client.id));
+                            framed.send(pkg).await?;
                         },
                         ClientToProxy::RemoveMinecraftClient(addr) => {
                             if let Some(client) = distributor.get_by_addr(&addr) {
                                 framed.send(SocketPacket::from(ProxyClientDisconnectPacket { client_id: client.id })).await?;
-                            } else {
-                                break
                             }
                             distributor.remove_by_addr(&addr);
                         }
-                        _ => {}
                     }
                 }
                 // handle packets from the proxy client
@@ -136,8 +143,9 @@ impl ProxyClient {
                     match result {
                         Ok(Some(Ok(packet))) => {
                             match packet {
+                                // if mc server disconnects mc client
                                 SocketPacket::ProxyDisconnect(packet) => {
-
+                                    distributor.remove_by_id(packet.client_id);
                                 }
                                 SocketPacket::ProxyData(packet) => {
                                     if let Some(client) = distributor.get_by_id(packet.client_id) {
@@ -177,7 +185,10 @@ impl ProxyClient {
     ) -> Result<(), DistributorError> {
         match &packet.auth {
             ProxyAuthenticator::PublicKey(public_key) => {
-                let challenge = public_key.create_challange();
+                let challenge = public_key.create_challange().map_err(|e| {
+                    tracing::error!("Could not create auth challenge: {:?}", e);
+                    DistributorError::AuthError
+                })?;
                 let auth_request = SocketPacket::ProxyAuthRequest(challenge);
 
                 frames.send(auth_request).await?;

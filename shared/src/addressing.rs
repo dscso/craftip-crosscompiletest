@@ -1,11 +1,8 @@
 use std::collections::HashMap;
-use std::fmt;
-use std::net::SocketAddr;
 
 use thiserror::Error;
 use tokio::sync::mpsc;
 
-use crate::addressing::DistributorError::UnknownError;
 use crate::socket_packet::ClientToProxy;
 
 pub type Tx = mpsc::UnboundedSender<ClientToProxy>;
@@ -44,13 +41,6 @@ pub enum DistributorError {
 }
 
 type ServerHostname = String;
-
-#[derive(Debug, Default)]
-pub struct Distributor {
-    pub clients: HashMap<SocketAddr, (Tx, ServerHostname)>,
-    pub servers: HashMap<ServerHostname, Tx>,
-    pub server_clients: HashMap<ServerHostname, Vec<Option<SocketAddr>>>,
-}
 
 #[derive(Debug)]
 pub struct Register {

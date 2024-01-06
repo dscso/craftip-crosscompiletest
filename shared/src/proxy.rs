@@ -52,18 +52,18 @@ pub struct ProxyClientDisconnectPacket {
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct ProxyDataPacket {
     pub client_id: u16,
-    pub data: Vec<u8>,
+    pub packet: MinecraftDataPacket,
 }
 
 impl ProxyDataPacket {
     pub fn from_mc_packet(packet: MinecraftDataPacket, client_id: u16) -> Self {
         ProxyDataPacket {
             client_id,
-            data: packet.data,
+            packet,
         }
     }
-    pub fn new(data: Vec<u8>, client_id: u16) -> Self {
-        Self { client_id, data }
+    pub fn new(packet: MinecraftDataPacket, client_id: u16) -> Self {
+        Self { client_id, packet }
     }
 }
 
@@ -71,7 +71,9 @@ impl ProxyDataPacket {
     pub fn from_mc_hello_packet(packet: &MinecraftHelloPacket, client_id: u16) -> Self {
         ProxyDataPacket {
             client_id,
-            data: packet.data.clone(),
+            packet: MinecraftDataPacket {
+                data: packet.data.clone(),
+            },
         }
     }
 }
@@ -80,7 +82,7 @@ impl From<MinecraftDataPacket> for ProxyDataPacket {
     fn from(packet: MinecraftDataPacket) -> Self {
         ProxyDataPacket {
             client_id: 0,
-            data: packet.data,
+            packet
         }
     }
 }

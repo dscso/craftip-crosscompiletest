@@ -215,11 +215,10 @@ struct ServerPanel {
 
 impl From<&Server> for ServerPanel {
     fn from(server: &Server) -> Self {
-        let name = server.server.clone();
         //let name = name.trim_end_matches(&format!(":{}", shared::config::SERVER_PORT)).to_string();
         Self {
             state: ServerState::Disconnected,
-            server: name,
+            server: server.server.clone(),
             auth: server.auth.clone(),
             connected: 0,
             local: server.local.clone(),
@@ -365,7 +364,14 @@ impl ServerPanel {
                         }
                         ServerState::Disconnected => {
                             self.state = ServerState::Connecting;
-                            let server = Server::from(&self.clone());
+                            let mut server = Server::from(&self.clone());
+                            let local = match server.local.parse::<u16>() {
+                                Ok(port) => {
+                                    format!("localhost:{}", port)
+                                },
+                                Err(_) => server.local.clone()
+                            };
+                            server.local = local;
                             tx.send(GuiTriggeredEvent::Connect(server))
                             .expect("failed to send disconnect event");
                         }
