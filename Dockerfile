@@ -11,6 +11,7 @@ COPY Cargo.toml .
 COPY shared/ ./shared/
 COPY server/ ./server/
 COPY client/ ./client/
+COPY client-gui/ ./client-gui/
 WORKDIR /craftip/server
 RUN cargo build --release
 
