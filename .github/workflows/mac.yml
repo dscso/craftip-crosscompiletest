@@ -1,0 +1,15 @@
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: macos-12
+    steps:
+      - uses: actions/checkout@v3
+      - run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
+      - run: cargo build --release
+        working-directory: client-gui
+        shell: bash
+      
