@@ -66,7 +66,6 @@ impl ClientConnection {
                     };
                     if n == 0 {
                         tracing::info!("Minecraft server closed connection!");
-                        self.proxy_tx.send(ClientToProxy::RemoveMinecraftClient(self.client_id))?;
                         break; // server 2 has closed the connection
                     }
                     tracing::debug!("recv pkg from mc srv len: {}", n);

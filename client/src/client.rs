@@ -216,6 +216,7 @@ impl Client {
                         },
                         ClientToProxy::RemoveMinecraftClient(id) => {
                             proxy.send(SocketPacket::from(ProxyClientDisconnectPacket::new(id))).await?;
+                            self.state.remove_connection(id);
                         },
                         ClientToProxy::Death(msg) => {
                             bail!(msg);
