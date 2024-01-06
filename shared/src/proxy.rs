@@ -7,7 +7,7 @@ use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
 /// ProxyHelloPacket is the first packet sent by the client to the proxy.
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct ProxyHelloPacket {
-    pub version: i32,
+    pub version: u16,
     pub hostname: String,
     pub auth: ProxyAuthenticator,
 }
@@ -36,7 +36,7 @@ pub enum ProxyAuthResponePacket {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct ProxyConnectedResponse {
-    pub version: i32,
+    pub version: u16,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
@@ -56,12 +56,6 @@ pub struct ProxyDataPacket {
 }
 
 impl ProxyDataPacket {
-    pub fn from_mc_packet(packet: MinecraftDataPacket, client_id: u16) -> Self {
-        ProxyDataPacket {
-            client_id,
-            packet,
-        }
-    }
     pub fn new(packet: MinecraftDataPacket, client_id: u16) -> Self {
         Self { client_id, packet }
     }
@@ -82,7 +76,7 @@ impl From<MinecraftDataPacket> for ProxyDataPacket {
     fn from(packet: MinecraftDataPacket) -> Self {
         ProxyDataPacket {
             client_id: 0,
-            packet
+            packet,
         }
     }
 }

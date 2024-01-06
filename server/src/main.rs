@@ -5,12 +5,12 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
-use shared::addressing::{DistributorError, Register};
 use crate::process_socket::process_socket_connection;
+use shared::addressing::{DistributorError, Register};
 
 mod client_handler;
-mod proxy_handler;
 mod process_socket;
+mod proxy_handler;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {

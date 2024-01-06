@@ -6,13 +6,16 @@ use crate::crypto::{ChallengeDataType, SignatureDataType};
 use bytes::{Buf, BytesMut};
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
-use tokio::sync::mpsc::{UnboundedSender};
+use tokio::sync::mpsc::UnboundedSender;
 
 use crate::cursor::{CustomCursor, CustomCursorMethods};
 use crate::datatypes::PacketError;
 use crate::datatypes::Protocol;
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
-use crate::proxy::{ProxyClientDisconnectPacket, ProxyClientJoinPacket, ProxyConnectedResponse, ProxyDataPacket, ProxyHelloPacket};
+use crate::proxy::{
+    ProxyClientDisconnectPacket, ProxyClientJoinPacket, ProxyConnectedResponse, ProxyDataPacket,
+    ProxyHelloPacket,
+};
 
 pub type PingPacket = u16;
 

@@ -11,7 +11,7 @@ use tokio::time::timeout;
 use tokio_util::codec::Framed;
 
 use shared::addressing::{DistributorError, Register};
-use shared::{config, distributor_error};
+use shared::config::PROTOCOL_VERSION;
 use shared::minecraft::MinecraftDataPacket;
 use shared::packet_codec::PacketCodec;
 use shared::proxy::{
@@ -19,6 +19,7 @@ use shared::proxy::{
     ProxyDataPacket, ProxyHelloPacket,
 };
 use shared::socket_packet::{ClientToProxy, SocketPacket};
+use shared::{config, distributor_error};
 
 #[derive(Debug, Clone)]
 pub struct MinecraftClient {
@@ -33,7 +34,11 @@ pub struct Distribiutor {
 }
 
 impl Distribiutor {
-    fn insert(&mut self, addr: SocketAddr, tx: UnboundedSender<MinecraftDataPacket>) -> Result<MinecraftClient, DistributorError> {
+    fn insert(
+        &mut self,
+        addr: SocketAddr,
+        tx: UnboundedSender<MinecraftDataPacket>,
+    ) -> Result<MinecraftClient, DistributorError> {
         let mut id = None;
         let time = std::time::Instant::now();
         for id_found in 0..=config::MAXIMUM_CLIENTS {
@@ -45,10 +50,7 @@ impl Distribiutor {
         tracing::info!("finding id took {:?}", time.elapsed());
         let id = id.ok_or(DistributorError::TooManyClients)?;
         self.clients_id.insert(id, addr);
-        let client = MinecraftClient {
-            id,
-            tx
-        };
+        let client = MinecraftClient { id, tx };
         self.clients_addr.insert(addr, client.clone());
         Ok(client)
     }
@@ -65,13 +67,15 @@ impl Distribiutor {
         self.clients_id.remove(&id);
     }
     fn get_by_addr(&self, addr: &SocketAddr) -> Option<&MinecraftClient> {
-        return self.clients_addr.get(addr)
+        return self.clients_addr.get(addr);
     }
-    fn get_by_id(&self, id: u16) -> Option<&MinecraftClient>{
-        return self.clients_id.get(&id).and_then(|addr| self.clients_addr.get(addr))
+    fn get_by_id(&self, id: u16) -> Option<&MinecraftClient> {
+        return self
+            .clients_id
+            .get(&id)
+            .and_then(|addr| self.clients_addr.get(addr));
     }
 }
-
 
 #[derive(Debug)]
 pub struct ProxyClient {
@@ -101,7 +105,9 @@ impl ProxyClient {
             .insert(self.hostname.clone(), tx);
 
         // send connected
-        let resp = SocketPacket::from(ProxyConnectedResponse { version: 123 });
+        let resp = SocketPacket::from(ProxyConnectedResponse {
+            version: PROTOCOL_VERSION,
+        });
         framed.send(resp).await?;
         loop {
             tokio::select! {

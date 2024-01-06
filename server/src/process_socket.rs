@@ -1,15 +1,17 @@
-use std::sync::Arc;
+use crate::client_handler::MCClient;
+use crate::proxy_handler::ProxyClient;
 use futures::SinkExt;
-use tokio::net::TcpStream;
-use tokio::sync::Mutex;
-use tokio_stream::StreamExt;
-use tokio_util::codec::Framed;
 use shared::addressing::{DistributorError, Register};
 use shared::distributor_error;
 use shared::packet_codec::PacketCodec;
 use shared::socket_packet::SocketPacket;
-use crate::client_handler::MCClient;
-use crate::proxy_handler::ProxyClient;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::net::TcpStream;
+use tokio::sync::Mutex;
+use tokio::time::timeout;
+use tokio_stream::StreamExt;
+use tokio_util::codec::Framed;
 
 /// This function handles the connection to one client
 /// it decides if the client is a minecraft client or a proxy client
@@ -29,7 +31,8 @@ pub async fn process_socket_connection(
     match packet {
         SocketPacket::MCHello(packet) => {
             let proxy_tx = register.lock().await.servers.get(&packet.hostname).cloned();
-            let proxy_tx = proxy_tx.ok_or(DistributorError::ServerNotFound(packet.hostname.clone()))?;
+            let proxy_tx =
+                proxy_tx.ok_or(DistributorError::ServerNotFound(packet.hostname.clone()))?;
 
             let mut client = MCClient::new(proxy_tx.clone(), frames, packet).await?;
 
@@ -47,12 +50,26 @@ pub async fn process_socket_connection(
                     .map_err(distributor_error!("could not get peer addr"))?
             );
             let mut client = ProxyClient::new(register.clone(), &packet.hostname);
-            match client.authenticate(&mut frames, &packet).await {
-                Ok(client) => client,
-                Err(e) => {
+            // authenticate
+            match timeout(
+                Duration::from_secs(10),
+                client.authenticate(&mut frames, &packet),
+            )
+            .await
+            {
+                Ok(Ok(client)) => client,
+                Err(_) => {
+                    frames
+                        .send(SocketPacket::ProxyError("Timeout".into()))
+                        .await?
+                }
+                Ok(Err(e)) => {
                     tracing::warn!("could not add proxy client: {}", e);
                     frames
-                        .send(SocketPacket::ProxyError(format!("Error {e}")))
+                        .send(SocketPacket::ProxyError(format!(
+                            "Error authenticating: {:?}",
+                            e
+                        )))
                         .await?;
                     return Err(e);
                 }

@@ -5,7 +5,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use crate::client::{Client, ControlTx, Stats};
 use crate::gui::gui_channel::GuiTriggeredEvent;
 use crate::gui::gui_channel::ServerState;
-use crate::{GuiState, ServerPanel};
+use crate::GuiState;
 
 pub struct Controller {
     pub gui_rx: UnboundedReceiver<GuiTriggeredEvent>,

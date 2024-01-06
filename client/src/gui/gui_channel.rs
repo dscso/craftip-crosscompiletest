@@ -7,11 +7,8 @@ pub type GuiTriggeredChannel = mpsc::UnboundedSender<GuiTriggeredEvent>;
 
 #[derive(Debug, Clone)]
 pub enum GuiTriggeredEvent {
-    Login,
-    Logout,
     Connect(Server),
     Disconnect(),
-    Send,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -2,8 +2,8 @@ use std::net::SocketAddr;
 
 use futures::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
+use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedReceiver;
-use tokio::sync::{mpsc};
 use tokio_util::codec::Framed;
 
 use shared::addressing::{DistributorError, Tx};
@@ -96,7 +96,9 @@ impl MCClient {
     pub async fn close_connection(&mut self) -> Result<(), DistributorError> {
         tracing::info!("removing Minecraft client {} from state", self.addr);
         // maybe connection is already closed
-        let _ = self.proxy_tx.send(ClientToProxy::RemoveMinecraftClient(self.addr));
+        let _ = self
+            .proxy_tx
+            .send(ClientToProxy::RemoveMinecraftClient(self.addr));
         Ok(())
     }
 }

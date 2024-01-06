@@ -30,6 +30,8 @@ pub enum DistributorError {
     ServerNotConnected(String),
     #[error("Auth Error")]
     AuthError,
+    #[error("Timeout")]
+    Timeout,
     #[error("Wrong Packet")]
     WrongPacket,
     #[error("TooManyClients")]

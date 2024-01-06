@@ -93,7 +93,7 @@ impl TryFrom<&str> for ServerPublicKey {
 #[derive(Debug, Error)]
 pub enum CryptoError {
     #[error("Crypto failed for unknown reason")]
-    CryptoFailed
+    CryptoFailed,
 }
 impl ServerPublicKey {
     pub fn get_host(&self) -> String {
@@ -108,7 +108,8 @@ impl ServerPublicKey {
     pub fn create_challange(&self) -> Result<ChallengeDataType, CryptoError> {
         let rng = rand::SystemRandom::new();
         let mut result = [0u8; 64];
-        rng.fill(&mut result).map_err(|e|CryptoError::CryptoFailed)?;
+        rng.fill(&mut result)
+            .map_err(|_| CryptoError::CryptoFailed)?;
         Ok(result)
     }
     pub fn verify(&self, data: &ChallengeDataType, signature: &SignatureDataType) -> bool {
@@ -147,7 +148,7 @@ mod tests {
     fn test_signature() {
         let private = ServerPrivateKey::default();
         let public = private.get_public_key();
-        let challenge = public.create_challange();
+        let challenge = public.create_challange().unwrap();
         let signature = private.sign(&challenge);
         assert!(public.verify(&challenge, &signature));
     }
@@ -155,7 +156,7 @@ mod tests {
     fn test_signature_invalid() {
         let private = ServerPrivateKey::default();
         let public = private.get_public_key();
-        let challenge = public.create_challange();
+        let challenge = public.create_challange().unwrap();
         let mut signature = private.sign(&challenge);
         signature[0] = 1;
         assert!(!public.verify(&challenge, &signature));

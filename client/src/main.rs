@@ -91,8 +91,6 @@ impl GuiState {
 }
 
 struct MyApp {
-    login_panel: LoginPanel,
-    edit_panel: EditPanel,
     state: Arc<Mutex<GuiState>>,
     tx: GuiTriggeredChannel,
     frames_rendered: usize,
@@ -126,8 +124,6 @@ impl MyApp {
 
         Self {
             tx: gui_tx,
-            login_panel: LoginPanel::default(),
-            edit_panel: EditPanel::default(),
             state,
             frames_rendered: 0,
         }
@@ -140,9 +136,6 @@ impl eframe::App for MyApp {
         let mut state = self.state.lock().unwrap();
         // draw ui
         CentralPanel::default().show(ctx, |ui| {
-            ui.set_enabled(!self.login_panel.open);
-            self.login_panel.update_login(ctx);
-            self.edit_panel.update(ctx);
             egui::menu::bar(ui, |ui| {
                 ui.heading("CraftIP");
                 if state.loading {
@@ -230,7 +223,6 @@ impl From<&Server> for ServerPanel {
 #[derive(Default)]
 struct EditPanel {
     open: bool,
-    server: String,
     local: String,
 }
 
@@ -267,7 +259,6 @@ impl ServerPanel {
                             }
                         });
                         ui.end_row();
-                        ui.set_enabled(configurable);
 
                         ui.add(Label::new("local port"))
                             .on_hover_text("Enter the Port the Minecraft Server is running on your machine\nIf you want to open the word in LAN use the default port 25565");
@@ -275,16 +266,20 @@ impl ServerPanel {
                         ui.horizontal(|ui| {
                             match &mut self.edit_local {
                                 None => {
+
                                     ui.label(&self.local);
-                                    if ui.button("✏").clicked() {
-                                        self.edit_local = Some(self.local.clone());
-                                    }
+                                    ui.vertical(|ui| {
+                                        ui.set_enabled(configurable);
+                                        if ui.button("✏").clicked() {
+                                            self.edit_local = Some(self.local.clone());
+                                        }
+                                    });
                                     if ui.button("📋").clicked() {
                                         ui.output_mut(|o| o.copied_text = self.local.clone());
                                     }
                                 }
                                 Some(edit_local) => {
-                                    let port = TextEdit::singleline(edit_local).desired_width(50.0);
+                                    let port = TextEdit::singleline(edit_local).desired_width(100.0);
                                     let ok = egui::Button::new(RichText::new("✔").color(Color32::DARK_GREEN));
 
                                     let update_txt = ui.add(port);

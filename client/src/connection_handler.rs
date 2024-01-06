@@ -1,23 +1,27 @@
 use anyhow::{Context, Result};
+use shared::minecraft::MinecraftDataPacket;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
-use shared::minecraft::MinecraftDataPacket;
 
-use shared::proxy::{ProxyClientDisconnectPacket};
+use crate::client::{ClientToProxy, ClientToProxyTx, ProxyToClientRx, ProxyToClientTx};
+use shared::proxy::ProxyClientDisconnectPacket;
 use shared::socket_packet::SocketPacket;
-use crate::client::{ClientToProxy, ClientToProxyRx, ClientToProxyTx, ProxyToClient, ProxyToClientRx, ProxyToClientTx};
 
 pub type Tx = UnboundedSender<Option<SocketPacket>>;
 pub struct ClientConnection {
     mc_server: String,
     client_id: u16,
     client_rx: ProxyToClientRx,
-    proxy_tx: ClientToProxyTx
+    proxy_tx: ClientToProxyTx,
 }
 
 impl ClientConnection {
-    pub async fn new(proxy_tx: ClientToProxyTx, mc_server: String, client_id: u16) -> (Self, ProxyToClientTx) {
+    pub async fn new(
+        proxy_tx: ClientToProxyTx,
+        mc_server: String,
+        client_id: u16,
+    ) -> (Self, ProxyToClientTx) {
         let (client_tx, client_rx) = unbounded_channel();
         (
             Self {
@@ -84,7 +88,12 @@ impl ClientConnection {
     pub async fn close(&self) {
         let disconnect_pkg = SocketPacket::from(ProxyClientDisconnectPacket::new(self.client_id));
         // if this fails, channel is already closed. Therefore not important
-        let _ = self.proxy_tx.send(ClientToProxy::RemoveMinecraftClient(self.client_id));
+        let _ = self
+            .proxy_tx
+            .send(ClientToProxy::RemoveMinecraftClient(self.client_id));
+    }
+    pub fn set_death(&self, error: String) {
+        let _ = self.proxy_tx.send(ClientToProxy::Death(error));
     }
 }
 

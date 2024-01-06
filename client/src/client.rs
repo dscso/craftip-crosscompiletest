@@ -4,19 +4,21 @@ use std::time::SystemTime;
 
 use anyhow::{bail, Context, Result};
 use futures::SinkExt;
+use shared::config::PROTOCOL_VERSION;
+use shared::minecraft::MinecraftDataPacket;
 use thiserror::Error;
 use tokio::io;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
-use shared::minecraft::MinecraftDataPacket;
 
 use shared::packet_codec::{PacketCodec, PacketCodecError};
-use shared::proxy::{ProxyAuthenticator, ProxyClientDisconnectPacket, ProxyDataPacket, ProxyHelloPacket};
+use shared::proxy::{
+    ProxyAuthenticator, ProxyClientDisconnectPacket, ProxyDataPacket, ProxyHelloPacket,
+};
 use shared::socket_packet::SocketPacket;
-use shared::socket_packet::SocketPacket::ProxyDisconnect;
 
 use crate::connection_handler::ClientConnection;
 use crate::gui::gui_channel::Server;
@@ -27,7 +29,6 @@ pub enum Stats {
     Connected,
     ClientsConnected(u16),
     Ping(u16),
-    Disconnected,
 }
 
 #[derive(Debug)]
@@ -45,6 +46,8 @@ pub enum ClientError {
     ProxyClosedConnection,
     #[error("User closed the connection")]
     UserClosedConnection,
+    #[error("Timeout")]
+    Timeout,
     #[error("Proxy error: {0}")]
     ProxyError(String),
     #[error("Minecraft server error. Is the server running?")]
@@ -58,6 +61,7 @@ pub enum ClientError {
 pub enum ClientToProxy {
     Packet(u16, MinecraftDataPacket),
     RemoveMinecraftClient(u16),
+    Death(String),
 }
 pub type ClientToProxyRx = mpsc::UnboundedReceiver<ClientToProxy>;
 pub type ClientToProxyTx = mpsc::UnboundedSender<ClientToProxy>;
@@ -79,12 +83,11 @@ pub struct Client {
 }
 
 pub struct State {
-    connections: HashMap<u16, mpsc::UnboundedSender<ProxyToClient>>,
-    stats_tx: Option<mpsc::UnboundedSender<Stats>>,
+    connections: HashMap<u16, ProxyToClientTx>,
+    stats_tx: Option<StatsTx>,
 }
 
 impl State {
-    /// Create a new, empty, instance of `Shared`.
     pub fn new() -> Self {
         State {
             connections: HashMap::new(),
@@ -94,7 +97,7 @@ impl State {
     pub fn set_stats_tx(&mut self, tx: StatsTx) {
         self.stats_tx = Some(tx);
     }
-    pub fn add_connection(&mut self, id: u16, tx: mpsc::UnboundedSender<ProxyToClient>) {
+    pub fn add_connection(&mut self, id: u16, tx: ProxyToClientTx) {
         self.connections.insert(id, tx);
         if let Some(tx) = &self.stats_tx {
             tx.send(Stats::ClientsConnected(self.connections.len() as u16))
@@ -113,7 +116,7 @@ impl State {
             .connections
             .get_mut(&id)
             .context(format!("could not find client id {}, {:?}", id, msg))?;
-        channel.send(msg).unwrap_or_else(|e| {
+        channel.send(msg).unwrap_or_else(|_| {
             self.connections.remove(&id);
         });
         Ok(())
@@ -121,7 +124,7 @@ impl State {
 }
 
 impl Client {
-    pub async fn new(server: Server, stats_tx: StatsTx, mut control_rx: ControlRx) -> Self {
+    pub async fn new(server: Server, stats_tx: StatsTx, control_rx: ControlRx) -> Self {
         let mut state = State::new();
         state.set_stats_tx(stats_tx.clone());
         Client {
@@ -145,7 +148,7 @@ impl Client {
         let mut proxy = Framed::new(proxy_stream, PacketCodec::new(1024 * 4));
 
         let hello = SocketPacket::from(ProxyHelloPacket {
-            version: 123,
+            version: PROTOCOL_VERSION,
             hostname: self.server.server.clone(),
             auth: match &mut self.server.auth {
                 ServerAuthentication::Key(private_key) => {
@@ -155,30 +158,29 @@ impl Client {
         });
 
         proxy.send(hello).await?;
+        let challenge = match timeout(Duration::from_secs(10), proxy.next()).await {
+            Ok(Some(Ok(SocketPacket::ProxyAuthRequest(pkg)))) => pkg,
+            Err(_) => return Err(ClientError::Timeout),
+            Ok(e) => return Err(ClientError::UnexpectedPacket(format!("{:?}", e))),
+        };
 
-        let packet = proxy.next().await.unwrap().unwrap();
-
-        if let SocketPacket::ProxyAuthRequest(challenge) = packet {
-            match &mut self.server.auth {
-                ServerAuthentication::Key(private_key) => {
-                    let mut signature = private_key.sign(&challenge);
-                    proxy
-                        .send(SocketPacket::ProxyAuthResponse(signature))
-                        .await?;
-                }
+        match &mut self.server.auth {
+            ServerAuthentication::Key(private_key) => {
+                let signature = private_key.sign(&challenge);
+                proxy
+                    .send(SocketPacket::ProxyAuthResponse(signature))
+                    .await?;
             }
-        } else {
-            return Err(ClientError::UnexpectedPacket(format!("{:?}", packet)));
         }
 
         tokio::select! {
             res = proxy.next() => match res {
-                Some(Ok(SocketPacket::ProxyHelloResponse(hello_response))) => {},
-                Some(Ok(SocketPacket::ProxyError(e))) => return Err(ClientError::ProxyError(e)),
-                None => return Err(ClientError::ProxyClosedConnection),
-                Some(Err(e)) => return Err(ClientError::ProtocolError(e)),
+                Some(Ok(SocketPacket::ProxyHelloResponse(_hello_response))) => Ok(()),
+                Some(Ok(SocketPacket::ProxyError(e))) => Err(ClientError::ProxyError(e)),
+                None => Err(ClientError::ProxyClosedConnection),
+                Some(Err(e)) => Err(ClientError::ProtocolError(e)),
                 e => return Err(ClientError::UnexpectedPacket(format!("{:?}", e))),
-            },
+            }?,
             res = self.control_rx.recv() => match res {
                 Some(Control::Disconnect) | None => {
                     return Err(ClientError::UserClosedConnection)
@@ -194,9 +196,7 @@ impl Client {
     }
     pub async fn handle(&mut self) -> Result<()> {
         let (to_proxy_tx, mut to_proxy_rx) = mpsc::unbounded_channel();
-        let (client_handler_death_tx, mut client_handler_death_rx) =
-            mpsc::unbounded_channel::<String>();
-        let mut proxy = self.proxy.as_mut().unwrap();
+        let proxy = self.proxy.as_mut().unwrap();
         loop {
             tokio::select! {
                 // process control messages e.g. form gui
@@ -207,13 +207,6 @@ impl Client {
                         }
                     }
                 }
-                // if any client handler dies, return error
-                result = client_handler_death_rx.recv() => {
-                    match result {
-                        Some(e) => bail!(e),
-                        None => bail!("client handler died")
-                    }
-                }
                 // send packets to proxy
                Some(pkg) = to_proxy_rx.recv() => {
                     //tracing::info!("Sending packet to client: {:?}", pkg);
@@ -222,7 +215,10 @@ impl Client {
                             proxy.send(SocketPacket::from(ProxyDataPacket::new(pkg, id))).await?;
                         },
                         ClientToProxy::RemoveMinecraftClient(id) => {
-                            proxy.send(SocketPacket::from(ProxyClientDisconnectPacket{ client_id: id  })).await?;
+                            proxy.send(SocketPacket::from(ProxyClientDisconnectPacket::new(id))).await?;
+                        },
+                        ClientToProxy::Death(msg) => {
+                            bail!(msg);
                         }
                     }
                 }
@@ -234,12 +230,11 @@ impl Client {
                                 SocketPacket::ProxyJoin(packet) => {
                                     let (mut client_connection, client_tx) = ClientConnection::new(to_proxy_tx.clone(), self.server.local.clone(), packet.client_id).await;
                                     self.state.add_connection(packet.client_id, client_tx);
-                                    let client_handler_death_tx = client_handler_death_tx.clone();
                                     tokio::spawn(async move {
                                         client_connection.handle_client().await.unwrap_or_else(|e| {
                                             tracing::error!("An Error occurred in the handle_client function: {}", e);
                                             // sometimes handle_client closes after gui, errors can occur
-                                            let _res = client_handler_death_tx.send(e.to_string());
+                                            client_connection.set_death(e.to_string());
                                         });
 
                                         client_connection.close().await;
