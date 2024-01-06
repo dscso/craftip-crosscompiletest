@@ -77,7 +77,6 @@ pub async fn process_socket_connection(
 
             let response = client.handle(&mut frames).await;
             client.close_connection().await;
-            println!("client closed connection {:?}", response);
             response?;
         }
         _ => {

@@ -155,7 +155,9 @@ impl ProxyClient {
                                 SocketPacket::ProxyData(packet) => {
                                     if let Some(client) = distributor.get_by_id(packet.client_id) {
                                         let mc_packet = MinecraftDataPacket::from(packet);
-                                        client.tx.send(mc_packet).map_err(distributor_error!("could not send packet"))?;
+                                        if let Err(e) = client.tx.send(mc_packet) {
+                                            tracing::warn!("could not send to minecraft client: {}", e);
+                                        }
                                     } else {
                                         tracing::error!("already disconnected! Packet will not be delivered {:?}", packet);
                                     }
