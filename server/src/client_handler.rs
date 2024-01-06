@@ -18,6 +18,7 @@ pub struct MCClient {
     rx: UnboundedReceiver<MinecraftDataPacket>,
     addr: SocketAddr,
     proxy_tx: Tx,
+    need_for_close: bool,
 }
 
 impl MCClient {
@@ -56,6 +57,7 @@ impl MCClient {
             rx,
             proxy_tx,
             addr,
+            need_for_close: true,
         })
     }
     /// HANDLE MC CLIENT
@@ -68,6 +70,7 @@ impl MCClient {
                             self.frames.send(SocketPacket::from(pkg)).await.map_err(distributor_error!("could not send packet"))?;
                         }
                         None => {
+                            self.need_for_close = false;
                             tracing::info!("client channel closed by minecraft server {}", self.addr);
                             break
                         }
@@ -95,13 +98,15 @@ impl MCClient {
         }
         Ok(())
     }
+}
 
-    pub async fn close_connection(&mut self) -> Result<(), DistributorError> {
-        tracing::info!("removing Minecraft client {} from state", self.addr);
-        // maybe connection is already closed
-        let _ = self
-            .proxy_tx
-            .send(ClientToProxy::RemoveMinecraftClient(self.addr));
-        Ok(())
+impl Drop for MCClient {
+    fn drop(&mut self) {
+        tracing::info!("dropping Client {}", self.addr);
+        if self.need_for_close {
+            let _ = self
+                .proxy_tx
+                .send(ClientToProxy::RemoveMinecraftClient(self.addr));
+        }
     }
 }

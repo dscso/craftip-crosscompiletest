@@ -36,9 +36,7 @@ pub async fn process_socket_connection(
 
             let mut client = MCClient::new(proxy_tx.clone(), frames, packet).await?;
 
-            let response = client.handle().await;
-            client.close_connection().await?;
-            response?;
+            client.handle().await?;
         }
         SocketPacket::ProxyHello(packet) => {
             tracing::info!(

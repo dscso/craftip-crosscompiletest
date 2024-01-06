@@ -15,11 +15,11 @@ use shared::config::PROTOCOL_VERSION;
 use shared::minecraft::MinecraftDataPacket;
 use shared::packet_codec::PacketCodec;
 use shared::proxy::{
-    ProxyAuthenticator, ProxyClientDisconnectPacket, ProxyClientJoinPacket, ProxyConnectedResponse,
+    ProxyAuthenticator, ProxyConnectedResponse,
     ProxyDataPacket, ProxyHelloPacket,
 };
 use shared::socket_packet::{ClientToProxy, SocketPacket};
-use shared::{config, distributor_error};
+use shared::config;
 
 #[derive(Debug, Clone)]
 pub struct MinecraftClient {
