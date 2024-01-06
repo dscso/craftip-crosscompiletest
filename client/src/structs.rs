@@ -1,10 +1,10 @@
-use std::io;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use shared::crypto::ServerPrivateKey;
 use shared::minecraft::MinecraftDataPacket;
 use shared::packet_codec::PacketCodecError;
+use std::io;
+use thiserror::Error;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 #[derive(Debug)]
 pub enum Stats {

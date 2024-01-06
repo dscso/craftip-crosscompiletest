@@ -2,12 +2,12 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedReceiver;
 
-use client::client::{Client };
-use client::structs::{Control, Stats};
-use client::structs::ControlTx;
 use crate::gui_channel::GuiTriggeredEvent;
 use crate::gui_channel::ServerState;
 use crate::GuiState;
+use client::client::Client;
+use client::structs::ControlTx;
+use client::structs::{Control, Stats};
 
 pub struct Controller {
     pub gui_rx: UnboundedReceiver<GuiTriggeredEvent>,

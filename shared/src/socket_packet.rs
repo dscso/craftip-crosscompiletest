@@ -12,10 +12,7 @@ use crate::cursor::{CustomCursor, CustomCursorMethods};
 use crate::datatypes::PacketError;
 use crate::datatypes::Protocol;
 use crate::minecraft::{MinecraftDataPacket, MinecraftHelloPacket};
-use crate::proxy::{
-    ProxyConnectedResponse, ProxyDataPacket,
-    ProxyHelloPacket,
-};
+use crate::proxy::{ProxyConnectedResponse, ProxyDataPacket, ProxyHelloPacket};
 
 pub type PingPacket = u16;
 pub type ClientID = u16;
@@ -43,7 +40,7 @@ pub enum SocketPacket {
 
 pub enum DisconnectReason {
     Disconnected,
-    SocketClosed
+    SocketClosed,
 }
 
 impl From<MinecraftHelloPacket> for SocketPacket {

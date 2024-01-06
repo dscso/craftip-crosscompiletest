@@ -1,9 +1,8 @@
 use anyhow::Result;
-use tokio::sync::mpsc;
 use client::client::Client;
 use client::structs::{Server, ServerAuthentication};
 use shared::crypto::ServerPrivateKey;
-
+use tokio::sync::mpsc;
 
 #[tokio::main]
 pub async fn main() -> Result<()> {
@@ -32,7 +31,7 @@ pub async fn main() -> Result<()> {
     let (stats_tx, mut stats_rx) = mpsc::unbounded_channel();
 
     let mut client = Client::new(server, stats_tx, control_rx).await;
-        // connect
+    // connect
     match client.connect().await {
         Ok(_) => {
             tracing::info!("Connected!");

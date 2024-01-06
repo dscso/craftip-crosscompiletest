@@ -1,20 +1,18 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
-mod gui_channel;
 mod backend;
+mod gui_channel;
 
 use anyhow::{Context, Result};
 use std::sync::{Arc, Mutex};
 
 use eframe::egui::{CentralPanel, Color32, Label, Layout, RichText, TextEdit, Ui};
 use eframe::emath::Align;
-use eframe::{CreationContext, egui, Storage, Theme};
+use eframe::{egui, CreationContext, Storage, Theme};
 use tokio::sync::mpsc;
 
 use crate::gui_channel::{GuiTriggeredChannel, GuiTriggeredEvent, ServerState};
-use shared::crypto::ServerPrivateKey;
 use client::structs::{Server, ServerAuthentication};
-
-
+use shared::crypto::ServerPrivateKey;
 
 #[tokio::main]
 pub async fn main() -> Result<(), eframe::Error> {

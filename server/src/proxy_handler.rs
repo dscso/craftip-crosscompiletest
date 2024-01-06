@@ -11,15 +11,14 @@ use tokio::time::timeout;
 use tokio_util::codec::Framed;
 
 use shared::addressing::{DistributorError, Register};
+use shared::config;
 use shared::config::PROTOCOL_VERSION;
 use shared::minecraft::MinecraftDataPacket;
 use shared::packet_codec::PacketCodec;
 use shared::proxy::{
-    ProxyAuthenticator, ProxyConnectedResponse,
-    ProxyDataPacket, ProxyHelloPacket,
+    ProxyAuthenticator, ProxyConnectedResponse, ProxyDataPacket, ProxyHelloPacket,
 };
 use shared::socket_packet::{ClientToProxy, SocketPacket};
-use shared::config;
 
 #[derive(Debug, Clone)]
 pub struct MinecraftClient {

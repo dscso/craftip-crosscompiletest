@@ -4,8 +4,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 
-use shared::socket_packet::SocketPacket;
 use crate::structs::{ClientToProxy, ClientToProxyTx, ProxyToClientRx, ProxyToClientTx};
+use shared::socket_packet::SocketPacket;
 
 pub type Tx = UnboundedSender<Option<SocketPacket>>;
 pub struct ClientConnection {
@@ -101,7 +101,9 @@ impl Drop for ClientConnection {
     fn drop(&mut self) {
         tracing::info!("dropping client connection {}", self.client_id);
         if self.need_for_close {
-            let _ = self.proxy_tx.send(ClientToProxy::RemoveMinecraftClient(self.client_id));
+            let _ = self
+                .proxy_tx
+                .send(ClientToProxy::RemoveMinecraftClient(self.client_id));
         }
     }
 }

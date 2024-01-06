@@ -1,6 +1,6 @@
-use tokio::sync::mpsc;
-use client::structs::Server;
 use crate::ServerPanel;
+use client::structs::Server;
+use tokio::sync::mpsc;
 
 pub type GuiTriggeredChannel = mpsc::UnboundedSender<GuiTriggeredEvent>;
 

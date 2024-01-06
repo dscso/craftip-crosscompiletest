@@ -3,7 +3,7 @@ use std::time::Duration;
 use std::time::SystemTime;
 
 use anyhow::{bail, Context, Result};
-use futures::{SinkExt};
+use futures::SinkExt;
 use shared::config::PROTOCOL_VERSION;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
@@ -11,15 +11,15 @@ use tokio::time::{sleep, timeout};
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 
-use shared::packet_codec::{PacketCodec};
-use shared::proxy::{
-    ProxyAuthenticator, ProxyDataPacket, ProxyHelloPacket,
-};
-use shared::socket_packet::{SocketPacket};
+use shared::packet_codec::PacketCodec;
+use shared::proxy::{ProxyAuthenticator, ProxyDataPacket, ProxyHelloPacket};
+use shared::socket_packet::SocketPacket;
 
 use crate::connection_handler::ClientConnection;
-use crate::structs::{ClientError, ClientToProxy, Control, ControlRx, ProxyToClient, ProxyToClientTx, Server, ServerAuthentication, Stats, StatsTx};
-
+use crate::structs::{
+    ClientError, ClientToProxy, Control, ControlRx, ProxyToClient, ProxyToClientTx, Server,
+    ServerAuthentication, Stats, StatsTx,
+};
 
 pub struct Client {
     state: State,
@@ -29,18 +29,13 @@ pub struct Client {
     server: Server,
 }
 
+#[derive(Default)]
 pub struct State {
     connections: HashMap<u16, ProxyToClientTx>,
     stats_tx: Option<StatsTx>,
 }
 
 impl State {
-    pub fn new() -> Self {
-        State {
-            connections: HashMap::new(),
-            stats_tx: None,
-        }
-    }
     pub fn set_stats_tx(&mut self, tx: StatsTx) {
         self.stats_tx = Some(tx);
     }
@@ -72,7 +67,7 @@ impl State {
 
 impl Client {
     pub async fn new(server: Server, stats_tx: StatsTx, control_rx: ControlRx) -> Self {
-        let mut state = State::new();
+        let mut state = State::default();
         state.set_stats_tx(stats_tx.clone());
         Client {
             server,
