@@ -15,12 +15,11 @@ jobs:
         - uses: actions/checkout@v3
         - run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
         - name: Install crosscompiler
-          run: rustup target add ${{ matrix.arch }}-apple-darwin
+          run: cargo install cross
         - name: Build application
           shell: bash
           run: |
-           cd client-gui
-           cargo build --release --target=${{ matrix.arch }}-apple-darwin
+           cross build -p client-gui --release --target ${{ matrix.arch }}-apple-darwin
         - name: Upload artifact
           uses: actions/upload-artifact@v4
           with:
