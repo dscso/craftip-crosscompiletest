@@ -18,7 +18,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ needs.create_release.outputs.upload_url }}
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
           # This is how it will be named on the release page. Put hatever name
           # you like, remember that they need to be different for each platform.
           # You can choose any build matrix parameters. For Rust I use the
