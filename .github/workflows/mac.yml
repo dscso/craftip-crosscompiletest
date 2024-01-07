@@ -24,7 +24,7 @@ jobs:
         - name: Upload artifact
           uses: actions/upload-artifact@v4
           with:
-            name: ${{ matrix.arch }}-apple-darwin.zip
+            name: ${{ matrix.arch }}-apple-darwin
             path: target/${{ matrix.arch }}-apple-darwin/release/client-gui
 
 
@@ -36,22 +36,22 @@ jobs:
       - name: Download x86_64
         uses: actions/download-artifact@v4
         with:
-          name: x86_64-apple-darwin.zip
+          name: x86_64-apple-darwin
           path: x86_64.zip
       - name: Download arm64
         uses: actions/download-artifact@v4
         with:
-          name: aarch64-apple-darwin.zip
+          name: aarch64-apple-darwin
           path: aarch64.zip
       - name: Combine app bundles
         shell: bash
         run: |
           unzip x86_64.zip -d x86_64
           unzip aarch64.zip -d aarch64
-          lipo {x86_64,aarch64} -create -output universal
+          lipo {x86_64,aarch64}/client-gui -create -output client-gui
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: universal
+          name: client-gui
           path: universal-apple-darwin
      
