@@ -14,16 +14,44 @@ jobs:
       steps:
         - uses: actions/checkout@v3
         - run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
-        - name: Install crosscompiler
-          run: cargo install cross
-        - name: Install toolchain for architecture
+        - name: Add architecture ${{ matrix.arch }}
           run: rustup target add ${{ matrix.arch }}-apple-darwin
         - name: Build application
           shell: bash
           run: |
-           cross build -p client-gui --release --target ${{ matrix.arch }}-apple-darwin
+           cd client-gui
+           cargo build --release --target=${{ matrix.arch }}-apple-darwin
         - name: Upload artifact
           uses: actions/upload-artifact@v4
           with:
             name: ${{ matrix.arch }}-apple-darwin
             path: target/${{ matrix.arch }}-apple-darwin/release/client-gui
+
+
+  universal-binary:
+    name: Universal binary
+    needs: [build-macos]
+    runs-on: macos-12
+    steps:
+      - name: Download x86_64
+        uses: actions/download-artifact@v4
+        with:
+          name: x86_64-apple-darwin
+          path: x86_64
+      - name: Download arm64
+        uses: actions/download-artifact@v4
+        with:
+          name: aarch64-apple-darwin
+          path: aarch64
+      - name: Combine app bundles
+        shell: bash
+        run: |
+          unzip x86_64/*.zip -d x86_64
+          unzip aarch64/*.zip -d aarch64
+          lipo {x86_64,aarch64} -create -output universal
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: universal
+          path: universal-apple-darwin
+     
