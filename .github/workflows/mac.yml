@@ -9,23 +9,15 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
-      - run: cargo install cross
-      - run: cargo build --release
-        working-directory: client-gui
+      - name: Install crosscompiler
+        run: cargo install cross
+      - name: Build application
         shell: bash
-      - name: Upload release assets
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+         cd client-gui
+         cargo build --release
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          # This is how it will be named on the release page. Put hatever name
-          # you like, remember that they need to be different for each platform.
-          # You can choose any build matrix parameters. For Rust I use the
-          # target triple.
-          asset_name: program-name-x86
-          # The path to the file you want to upload.
-          asset_path: target/release/client-gui
-          # probably you will need to change it, but most likely you are
-          # uploading a binary file
-          asset_content_type: application/octet-stream
+          name: client-mac-x86
+          path: target/release/client-gui
