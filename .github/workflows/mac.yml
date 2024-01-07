@@ -16,6 +16,8 @@ jobs:
         - run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
         - name: Install crosscompiler
           run: cargo install cross
+        - name: Install toolchain for architecture
+          run: rustup target add ${{ matrix.arch }}-apple-darwin
         - name: Build application
           shell: bash
           run: |
