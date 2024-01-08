@@ -19,7 +19,7 @@ jobs:
           update: true
 
     - name: Install dependencies
-      run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+      run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
 
     - name: Configure
       working-directory: ${{runner.workspace}}
