@@ -23,7 +23,6 @@ jobs:
     - uses: actions/checkout@v1
 
     - name: Configure
-      working-directory: ${{runner.workspace}}
       shell: bash
       run: ~/.cargo/bin/cargo build --bin client-gui --target=x86_64-pc-windows-gnu
 
