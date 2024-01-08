@@ -29,7 +29,7 @@ jobs:
 
 
   universal-binary:
-    name: Universal binary
+    name: Build DMG
     needs: [build-macos]
     runs-on: macos-12
     steps:
@@ -49,7 +49,7 @@ jobs:
         run: |
           export X86_64_APPLE_DARWIN=x86_64/client-gui
           export AARCH64_APPLE_DARWIN=aarch64/client-gui
-          export $DMG_OUTPUT_PATH=CraftIP.dmg
+          export DMG_OUTPUT_PATH=CraftIP.dmg
           sh build/build-mac.sh
       - name: Upload artifact
         uses: actions/upload-artifact@v4
