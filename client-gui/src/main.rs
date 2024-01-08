@@ -1,9 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 mod backend;
 mod gui_channel;
+mod updater;
 
 use anyhow::{Context, Result};
 use std::sync::{Arc, Mutex};
+use std::thread;
 
 use eframe::egui::{CentralPanel, Color32, Label, Layout, RichText, TextEdit, Ui};
 use eframe::emath::Align;
@@ -33,6 +35,12 @@ pub async fn main() -> Result<(), eframe::Error> {
         ..Default::default()
     };
 
+    thread::spawn(move || {
+            let mut updater = updater::Updater::default();
+            updater.check_for_update().unwrap();
+            updater.update().unwrap();
+            updater.restart().unwrap();
+    });
     eframe::run_native(
         "CraftIP",
         options,
@@ -133,7 +141,7 @@ impl eframe::App for MyApp {
         // draw ui
         CentralPanel::default().show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
-                ui.heading("CraftIP");
+                ui.heading("CraftIP debug");
                 if state.loading {
                     ui.spinner();
                 }
