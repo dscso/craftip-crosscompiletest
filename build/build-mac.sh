@@ -34,6 +34,7 @@ mkdir -p $APP_DESTINATION/Contents/MacOS
 mkdir -p $APP_DESTINATION/Contents/Resources
 echo "building universal binary..."
 lipo $X86_64_APPLE_DARWIN $AARCH64_APPLE_DARWIN -create -output $APP_DESTINATION/Contents/MacOS/client-gui
+chmod +x $APP_DESTINATION/Contents/MacOS/client-gui
 echo "copying resources..."
 cp $RESOURCES/Info.plist $APP_DESTINATION/Contents/Info.plist
 
