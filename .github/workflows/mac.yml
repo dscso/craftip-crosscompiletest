@@ -12,10 +12,10 @@ jobs:
       name: ${{ matrix.arch }}
       runs-on: macos-12
       steps:
-        - uses: actions/checkout@v3
         - run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
         - name: Add architecture ${{ matrix.arch }}
           run: rustup target add ${{ matrix.arch }}-apple-darwin
+        - uses: actions/checkout@v3
         - name: Build application
           shell: bash
           run: |

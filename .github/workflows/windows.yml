@@ -18,12 +18,20 @@ jobs:
           msystem: MINGW64
           update: true
 
-    - name: Install dependencies
-      run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
-
-    - name: Configure
-      working-directory: ${{runner.workspace}}
-      run: bash cargo build --bin client-gui --target=x86_64-pc-windows-gnu
+    - name: Install Rustup using win.rustup.rs
+      run: |
+        # Disable the download progress bar which can cause perf issues
+        $ProgressPreference = "SilentlyContinue"
+        Invoke-WebRequest https://win.rustup.rs/ -OutFile rustup-init.exe
+        .\rustup-init.exe -y --default-host=x86_64-pc-windows-msvc --profile=minimal
+        del rustup-init.exe
+      shell: powershell
+        - name: Ensure stable toolchain is up to date
+          run: rustup update stable
+          shell: bash
+        - name: Install the target
+          run: |
+            rustup target install ${{ matrix.target }}
 
 
     - uses: actions/upload-artifact@v1
