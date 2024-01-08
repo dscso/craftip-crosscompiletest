@@ -12,26 +12,20 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-    - uses: actions/checkout@v1
     - uses: msys2/setup-msys2@v2
       with:
           msystem: MINGW64
           update: true
 
-    - name: Install Rustup using win.rustup.rs
-      run: |
-        # Disable the download progress bar which can cause perf issues
-        $ProgressPreference = "SilentlyContinue"
-        Invoke-WebRequest https://win.rustup.rs/ -OutFile rustup-init.exe
-        .\rustup-init.exe -y --default-host=x86_64-pc-windows-msvc --profile=minimal
-        del rustup-init.exe
-      shell: powershell
-        - name: Ensure stable toolchain is up to date
-          run: rustup update stable
-          shell: bash
-        - name: Install the target
-          run: |
-            rustup target install ${{ matrix.target }}
+    - name: Install dependencies
+      run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
+
+    - uses: actions/checkout@v1
+
+    - name: Configure
+      working-directory: ${{runner.workspace}}
+      shell: bash
+      run: ~/.cargo/bin/cargo build --bin client-gui --target=x86_64-pc-windows-gnu
 
 
     - uses: actions/upload-artifact@v1
