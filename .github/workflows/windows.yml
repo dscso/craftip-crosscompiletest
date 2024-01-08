@@ -1,0 +1,32 @@
+name: Windows
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+    - uses: actions/checkout@v1
+    - uses: msys2/setup-msys2@v2
+      with:
+          msystem: MINGW64
+          update: true
+
+    - name: Install dependencies
+      run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+    - name: Configure
+      working-directory: ${{runner.workspace}}
+      run: cargo build --bin client-gui --target=x86_64-pc-windows-gnu
+
+
+    - uses: actions/upload-artifact@v1
+      with:
+        name: client-gui.exe
+        path: ${{runner.workspace}}\target\x86_64-pc-windows-gnu\release\client-gui.exe
