@@ -30,4 +30,4 @@ jobs:
     - uses: actions/upload-artifact@v1
       with:
         name: client-gui.exe
-        path: ${{runner.workspace}}\target\x86_64-pc-windows-gnu\release\client-gui.exe
+        path: target\x86_64-pc-windows-gnu\release\client-gui.exe
