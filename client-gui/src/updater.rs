@@ -1,5 +1,5 @@
 use anyhow::{bail, format_err, Result};
-use std::{env, fs, io, process, thread};
+use std::{env, fs, io, process};
 use std::env::consts::EXE_SUFFIX;
 use reqwest::header;
 use self_update::{cargo_crate_version, Download, Extract, get_target, self_replace, version};

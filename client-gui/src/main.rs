@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use eframe::egui::{CentralPanel, Color32, Label, Layout, RichText, TextEdit, Ui};
+use eframe::egui::{CentralPanel, Color32, IconData, Label, Layout, RichText, TextEdit, Ui, ViewportCommand};
 use eframe::emath::Align;
 use eframe::{egui, CreationContext, Storage, Theme};
 use tokio::sync::mpsc;
@@ -26,20 +26,23 @@ pub async fn main() -> Result<(), eframe::Error> {
         .with_thread_ids(false)
         .with_target(false)
         .finish();
-
     tracing::subscriber::set_global_default(subscriber).unwrap();
 
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([500.0, 400.0]);
+    viewport.icon = build_icon();
     let options = eframe::NativeOptions {
         default_theme: Theme::Light,
-        viewport: egui::ViewportBuilder::default().with_inner_size([500.0, 400.0]),
+        viewport,
         ..Default::default()
     };
 
     thread::spawn(move || {
             let mut updater = updater::Updater::default();
-            updater.check_for_update().unwrap();
-            updater.update().unwrap();
-            updater.restart().unwrap();
+            if updater.check_for_update().unwrap() {
+                updater.update().unwrap();
+                updater.restart().unwrap();
+            }
     });
     eframe::run_native(
         "CraftIP",
@@ -49,6 +52,19 @@ pub async fn main() -> Result<(), eframe::Error> {
             Box::new(MyApp::new(cc))
         }),
     )
+}
+
+fn build_icon() -> Option<Arc<IconData>> {
+    let icon = include_bytes!("../../build/resources/logo-mac.png");
+    let image = image::load_from_memory(icon)
+        .expect("Image could not be loaded from memory")
+        .into_rgba8();
+    let (width, height) = image.dimensions();
+    Some(Arc::new(IconData{
+        rgba: image.into_raw(),
+        width,
+        height,
+    }))
 }
 
 pub struct GuiState {
