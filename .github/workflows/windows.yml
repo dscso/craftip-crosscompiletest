@@ -6,27 +6,18 @@ on:
       - main
 
 jobs:
-  build:
+  windows-amd64:
     runs-on: windows-latest
-    defaults:
-      run:
-        shell: msys2 {0}
     steps:
-    - uses: msys2/setup-msys2@v2
-      with:
-          msystem: MINGW64
-          update: true
+      - uses: actions/checkout@v3
 
-    - name: Install dependencies
-      run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
+      - name: Build
+        run: |
+          rustup target add x86_64-pc-windows-msvc
+          cargo build --release --target x86_64-pc-windows-msvc
 
-    - uses: actions/checkout@v1
-
-    - name: Configure
-      shell: bash
-      run: ~/.cargo/bin/cargo build --bin client-gui --target=x86_64-pc-windows-msvc --release
-
-    - uses: actions/upload-artifact@v1
-      with:
-        name: client-gui.exe
-        path: target\x86_64-pc-windows-msvc\release\client-gui.exe
+      - uses: actions/upload-artifact@v3
+        with:
+          name: ${{ github.job }}
+          path: target/x86_64-pc-windows-msvc/release/client-gui.exe
+          retention-days: 1
