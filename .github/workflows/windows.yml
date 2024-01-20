@@ -20,4 +20,3 @@ jobs:
         with:
           name: ${{ github.job }}
           path: target/x86_64-pc-windows-msvc/release/client-gui.exe
-          retention-days: 1
