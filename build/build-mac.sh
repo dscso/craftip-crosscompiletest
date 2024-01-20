@@ -33,13 +33,13 @@ echo "Building $APP_NAME.app..."
 mkdir -p $APP_DESTINATION/Contents/MacOS
 mkdir -p $APP_DESTINATION/Contents/Resources
 echo "building universal binary..."
-lipo $X86_64_APPLE_DARWIN $AARCH64_APPLE_DARWIN -create -output $APP_DESTINATION/Contents/MacOS/client-gui
-chmod +x $APP_DESTINATION/Contents/MacOS/client-gui
+lipo $X86_64_APPLE_DARWIN $AARCH64_APPLE_DARWIN -create -output $APP_DESTINATION/Contents/MacOS/CraftIP
+chmod +x $APP_DESTINATION/Contents/MacOS/CraftIP
 echo "copying resources..."
 cp $RESOURCES/Info.plist $APP_DESTINATION/Contents/Info.plist
 
 echo "building icon..."
-ICON=$RESOURCES/logo.png
+ICON=$RESOURCES/logo-mac.png
 ICON_BUILD=$APP_DESTINATION/Contents/Resources/logo
 mkdir $ICON_BUILD.iconset
 sips -z 16 16     $ICON --out $ICON_BUILD.iconset/icon_16x16.png
