@@ -27,6 +27,20 @@ jobs:
             name: ${{ matrix.arch }}-apple-darwin
             path: target/${{ matrix.arch }}-apple-darwin/release/client-gui
 
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Build
+        run: |
+          rustup target add x86_64-pc-windows-msvc
+          cargo build --release --target x86_64-pc-windows-msvc
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: x86_64-pc-windows-msvc
+          path: target/x86_64-pc-windows-msvc/release/client-gui.exe
 
   universal-binary:
     name: Build DMG
