@@ -87,7 +87,7 @@ impl Client {
             .map_err(|_| ClientError::MinecraftServerNotFound)?;
         // connect to proxy
         let proxy_stream = TcpStream::connect(format!("{}:25565", &self.server.server)).await?;
-        let mut proxy = Framed::new(proxy_stream, PacketCodec::new(1024 * 8));
+        let mut proxy = Framed::new(proxy_stream, PacketCodec::new(1024 * 1024));
 
         let hello = SocketPacket::from(ProxyHelloPacket {
             version: PROTOCOL_VERSION,
