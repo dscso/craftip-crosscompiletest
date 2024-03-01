@@ -15,7 +15,7 @@ jobs:
         - run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
         - name: Add architecture ${{ matrix.arch }}
           run: rustup target add ${{ matrix.arch }}-apple-darwin
-        - uses: actions/checkout@v3
+        - uses: actions/checkout@v4
         - name: Build application
           shell: bash
           run: |
@@ -30,7 +30,7 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Build
         run: |
@@ -47,7 +47,7 @@ jobs:
     needs: [build-macos]
     runs-on: macos-12
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Download x86_64
         uses: actions/download-artifact@v4
         with:
